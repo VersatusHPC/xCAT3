@@ -1,0 +1,23 @@
+#!/bin/bash
+# The nic name might change between the installation and 1st boot
+# Active all the nics with network link during system boot
+
+[ "$XCATDEBUGMODE" ] || export XCATDEBUGMODE="#TABLEBLANKOKAY:site:key=xcatdebugmode:value#"
+[ "$MASTER_IP" ] || export MASTER_IP="#ENV:MASTER_IP#"
+#INCLUDE:#ENV:XCATROOT#/share/xcat/install/scripts/scriptlib#
+
+# Show connections <name>:<state>
+nmcli -g NAME,STATE con show | \
+    # print connection name for activated interfaces (ignores loopback iterface)
+    perl -F: -lane 'print $F[0] if $F[0] ne "lo" && $F[1] eq "activated"' | \
+    # enable connection during the boot 
+    xargs -t -I% nmcli con mod % connection.autoconnect yes
+
+internet_repo_file_list="oracle-linux-ol10.repo uek-ol10.repo Rocky-AppStream.repo Rocky-BaseOS.repo Rocky-Extras.repo CentOS-Base.repo almalinux-ha.repo almalinux-nfv.repo almalinux-powertools.repo almalinux.repo almalinux-resilientstorage.repo almalinux-rt.repo"
+
+for repo_file in $internet_repo_file_list
+do
+  if [ -f /etc/yum.repos.d/$repo_file ]; then
+    sed -i -e 's/enabled=1/enabled=0/' /etc/yum.repos.d/$repo_file
+  fi
+done
