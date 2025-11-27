@@ -2218,7 +2218,7 @@ sub CheckVersion
         Returns the os and version of the System you are running on
     Arguments:
         $type: which type of os infor you want.  Supported values are:
-               all,os,version,release
+               all,os,version,release,platform
     Returns:
         0 - ok
     Globals:
@@ -2228,7 +2228,7 @@ sub CheckVersion
     Example:
          my $os=(xCAT::Utils->osver{ ...}
     Comments:
-        none
+        type=all does not return platform for backward compatibility reasons
 
 =cut
 
@@ -2246,6 +2246,7 @@ sub osver
     my $ver   = '';
     my $rel   = '';
     my $line  = '';
+    my $platform = '';
     my @lines;
     my $relfile;
 
@@ -2285,6 +2286,9 @@ sub osver
                 }
                 if ($line =~ /^\s*PRETTY_NAME=\"?(.*)/) {
                     $prettyname = $1;
+                }
+                if ($line =~ /^\s*PLATFORM_ID=\"?platform:(el\d+)/) {
+                    $platform = $1;
                 }
             }
         }
@@ -2446,6 +2450,8 @@ sub osver
         return ($ver);
     } elsif ($type and $type =~ /release/) {
         return ($rel);
+    } elsif ($type and $type =~ /platform/) {
+        return ($platform);
     } else {
         return ("$os" . "$ver");
     }
