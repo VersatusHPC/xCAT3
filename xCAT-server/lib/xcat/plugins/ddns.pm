@@ -23,6 +23,8 @@ my $distro = xCAT::Utils->osver();
 
 my $service = "named";
 
+my $ddns_key_path = "/etc/xcat/ddns.key";
+
 # is this ubuntu ?
 if ($distro =~ /ubuntu.*/i || $distro =~ /debian.*/i) {
     $service = "bind9";
@@ -1286,7 +1288,10 @@ sub update_namedconf {
             my @bind_version =xCAT::Utils->runcmd($bind_version_cmd, 0);
             # Turn off DNSSEC if running with bind vers 9.16.6 or higher
             if ((scalar @bind_version > 0) && (xCAT::Utils::CheckVersion($bind_version[0], "9.16.6") >= 0)) {
-                # push @newnamed, "\t# dnssec-enable no;\n";
+                # dnssec-enable was removed in bind 9.18
+                unless (xCAT::Utils::CheckVersion($bind_version[0], "9.18.0") >= 0) {
+                  push @newnamed, "\tdnssec-enable no;\n";
+                }
                 push @newnamed, "\tdnssec-validation no;\n";
             }
         }
@@ -1358,7 +1363,14 @@ sub update_namedconf {
                 $ctx->{privkey} = encode_base64(genpassword(32));
                 chomp($ctx->{privkey});
             }
-            push @newnamed, "key xcat_key {\n", "\talgorithm hmac-sha256;\n", "\tsecret \"" . $ctx->{privkey} . "\";\n", "};\n\n";
+            my $contents = "key \"xcat_key\" {\n". "\talgorithm hmac-sha256;\n". "\tsecret \"" . $ctx->{privkey} . "\";\n". "};\n\n";
+
+            if (Net::DNS->VERSION >= 1.36) {
+                open(my $fh, '>', $ddns_key_path) or die "Cannot open $ddns_key_path";
+                print $fh $contents;
+                close $fh;
+            }
+            push @newnamed, $contents;
             $ctx->{restartneeded} = 1;
         }
     }
@@ -1535,7 +1547,6 @@ sub add_or_delete_records {
             find_nameserver_for_dns($ctx, $tmpdm);
         }
     }
-
     my $zone;
     foreach $zone (keys %{ $ctx->{updatesbyzone} }) {
         unless (defined($ctx->{nsmap}->{$zone}) && $ctx->{nsmap}->{$zone}) {
@@ -1554,7 +1565,6 @@ sub add_or_delete_records {
             my $entry;
             my $numreqs = 300; # limit to 300 updates in a payload, something broke at 644 on a certain sample, choosing 300 for now
             my $update = Net::DNS::Update->new($zone);
-
             foreach $entry (@{ $ctx->{updatesbyzone}->{$zone} }) {
                 if ($ctx->{deletemode}) {
                     $update->push(update => rr_del($entry));
@@ -1566,8 +1576,11 @@ sub add_or_delete_records {
 
                     # sometimes even the xcat_key is correct, but named still replies NOTAUTH, so retry
                     for (1 .. 3) {
-                        #$update->sign_tsig("xcat_key", $ctx->{privkey});
-                        $update->sign_tsig("/etc/xcat/ddns.key");
+                        if (Net::DNS->VERSION >= 1.36) {
+                            $update->sign_tsig($ddns_key_path);
+                        } else {
+                            $update->sign_tsig("xcat_key", $ctx->{privkey});
+                        }
                         $numreqs = 300;
                         my $reply = $resolver->send($update);
                         if ($reply) {
@@ -1585,13 +1598,15 @@ sub add_or_delete_records {
                     }
                     $update = Net::DNS::Update->new($zone);   #new empty request
                 }
-
             }
             if ($numreqs != 300) { #either no entries at all to begin with or a perfect multiple of 300
-                # sometimes even the xcat_key is correct, but named still replies NOTAUTH, so retry
+                 # sometimes even the xcat_key is correct, but named still replies NOTAUTH, so retry
                 for (1 .. 3) {
-                    $update->sign_tsig("/etc/xcat/ddns.key");
-                    # $update->sign_tsig("xcat_key", $ctx->{privkey});
+                    if (Net::DNS->VERSION >= 1.36) {
+                        $update->sign_tsig($ddns_key_path);
+                    } else {
+                        $update->sign_tsig("xcat_key", $ctx->{privkey});
+                    }
                     my $reply = $resolver->send($update);
                     if ($reply) {
                         if ($reply->header->rcode eq 'NOTAUTH') {
