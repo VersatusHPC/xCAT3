@@ -57,6 +57,11 @@ Requires: grub2-xcat >= 2.02-0.76.el7.1.snap201905160255 perl-Net-HTTPS-NB perl-
 %endif
 %endif
 
+Requires: initscripts
+%if 0%{?rhel} >= 10
+Requires: openssl
+%endif
+
 %if %fsm
 # nothing needed here
 %else
