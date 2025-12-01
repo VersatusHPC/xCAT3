@@ -15,6 +15,7 @@ BuildRoot: /var/tmp/%{name}-%{version}-%{release}-root
 BuildArch: noarch
 %endif
 Requires: xCAT-server
+BuildRequires: perl-Pod-Html
 
 # perl-ExtUtils-MakeMaker, perl-CPAN, perl-Test-Harness are only available in rhel.
 # When this rpm supports being installed in sles, need to add these to xcat-dep.

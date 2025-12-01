@@ -19,6 +19,8 @@ BuildRoot: /var/tmp/%{name}-%{version}-%{release}-root
 %define s390x %(if [ "$s390x" = "1" ];then echo 1; else echo 0; fi)
 %define nots390x %(if [ "$s390x" = "1" ];then echo 0; else echo 1; fi)
 
+BuildRequires: perl-Pod-Html
+
 # AIX will build with an arch of "ppc"
 %ifos linux
 BuildArch: noarch

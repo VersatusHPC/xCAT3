@@ -17,6 +17,7 @@ BuildArch: noarch
 Requires: confluent_server
 
 Provides: xCAT-confluent = %{epoch}:%{version}
+BuildRequires: perl-Pod-Html
 
 %description
 xCAT confluent provides the necessary integration pieces to utilize the confluent
