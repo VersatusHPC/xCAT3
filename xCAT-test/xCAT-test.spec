@@ -11,6 +11,7 @@ Vendor: IBM Corp.
 Distribution: %{?_distribution:%{_distribution}}%{!?_distribution:%{_vendor}}
 Prefix: /opt/xcat
 BuildRoot: /var/tmp/%{name}-%{version}-%{release}-root
+BuildRequires: perl-Pod-Html
 
 # AIX will build with an arch of "ppc"
 %ifos linux

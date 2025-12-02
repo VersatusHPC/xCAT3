@@ -269,7 +269,7 @@ else	# linux
 		echo "Error: rpmbuild does not appear to be installed or working."
 		exit 2
 	fi
-	RPMROOT=`rpmbuild --eval '%_topdir' xCATsn/xCATsn.spec`
+	RPMROOT="/root/rpmbuild"
 	if [ $? -gt 0 ]; then
 		echo "Error: Could not determine rpmbuild's root directory."
 		exit 2

@@ -19,6 +19,8 @@ BuildRoot: /var/tmp/%{name}-%{version}-%{release}-root
 %define s390x %(if [ "$s390x" = "1" ];then echo 1; else echo 0; fi)
 %define nots390x %(if [ "$s390x" = "1" ];then echo 0; else echo 1; fi)
 
+BuildRequires: perl-Pod-Html
+
 # AIX will build with an arch of "ppc"
 %ifos linux
 BuildArch: noarch
@@ -319,7 +321,7 @@ MANPATH=\$XCATROOT/share/man:\$MANPATH
 export XCATROOT PATH MANPATH
 export PERL_BADLANG=0
 # If /usr/local/share/perl5 is not already in @INC, add it to PERL5LIB
-perl -e "print \"@INC\"" | egrep "(^|\W)/usr/local/share/perl5($| )" > /dev/null
+perl -e "print \"@INC\"" | grep -E "(^|\W)/usr/local/share/perl5($| )" > /dev/null
 if [ \$? = 1 ]; then
     export PERL5LIB=/usr/local/share/perl5:\$PERL5LIB
 fi
@@ -343,7 +345,7 @@ else
 endif
 setenv PERL_BADLANG 0
 # If /usr/local/share/perl5 is not already in @INC, add it to PERL5LIB
-perl -e "print \"@INC\"" | egrep "(^|\W)/usr/local/share/perl5($| )" > /dev/null
+perl -e "print \"@INC\"" | grep -E "(^|\W)/usr/local/share/perl5($| )" > /dev/null
 if [ \$? = 1 ]; then
     setenv PERL5LIB /usr/local/share/perl5:\${PERL5LIB}
 fi
@@ -351,13 +353,13 @@ EOF
 chmod 755 /etc/profile.d/xcat.*
 
 %else
-if ! egrep PERL5LIB /etc/environment > /dev/null 2>&1 ; then
+if ! grep -E PERL5LIB /etc/environment > /dev/null 2>&1 ; then
 echo "
 # xCAT Perl setup
 PERL5LIB=/usr/opt/perl5/lib/5.8.2:/usr/opt/perl5/lib/5.8.2/aix-thread-multi:/usr/opt/perl5/lib/site_perl/5.8.2:/usr/opt/perl5/lib/site_perl/5.8.2/aix-thread-multi " >>/etc/environment
 fi
 
-if ! egrep XCATROOT /etc/environment > /dev/null 2>&1 ; then
+if ! grep -E XCATROOT /etc/environment > /dev/null 2>&1 ; then
 echo "
 # xCAT setup
 XCATROOT=$RPM_INSTALL_PREFIX0
@@ -366,7 +368,7 @@ MANPATH=\$XCATROOT/share/man:\$MANPATH
 " >> /etc/environment
 fi
 
-if ! egrep XCATROOT /etc/profile  > /dev/null 2>&1 ; then
+if ! grep -E XCATROOT /etc/profile  > /dev/null 2>&1 ; then
 echo "
 # xCAT setup
 XCATROOT=$RPM_INSTALL_PREFIX0

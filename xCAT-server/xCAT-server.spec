@@ -57,6 +57,11 @@ Requires: grub2-xcat >= 2.02-0.76.el7.1.snap201905160255 perl-Net-HTTPS-NB perl-
 %endif
 %endif
 
+Requires: initscripts
+%if 0%{?rhel} >= 10
+Requires: openssl
+%endif
+
 %if %fsm
 # nothing needed here
 %else
@@ -484,19 +489,19 @@ fi
 %endif
 
 #Apply the correct httpd/apache configuration file according to the httpd/apache version
-if [ -n "$(httpd -v 2>&1 |grep -e '^Server version\s*:.*\/2.4')" ]
+if [ -n "$(httpd -v 2>&1 |grep -e '^Server version\s*:.*/2\.4')" ]
 then
    rm -rf /etc/httpd/conf.d/xcat-ws.conf
    cp /etc/%httpconfigdir/conf.orig/xcat-ws.conf.apache24 /etc/httpd/conf.d/xcat-ws.conf
 fi
 
-if [ -n "$(apachectl -v 2>&1 |grep -e '^Server version\s*:.*\/2.4')" ]
+if [ -n "$(apachectl -v 2>&1 |grep -e '^Server version\s*:.*/2\.4')" ]
 then
    rm -rf /etc/apache2/conf.d/xcat-ws.conf
    cp /etc/%httpconfigdir/conf.orig/xcat-ws.conf.apache24 /etc/apache2/conf.d/xcat-ws.conf
 fi
 
-if [ -n "$(apache2ctl -v 2>&1 |grep -e '^Server version\s*:.*\/2.4')" ]
+if [ -n "$(apache2ctl -v 2>&1 |grep -e '^Server version\s*:.*/2\.4')" ]
 then
    rm -rf /etc/apache2/conf.d/xcat-ws.conf
    cp /etc/%httpconfigdir/conf.orig/xcat-ws.conf.apache24 /etc/apache2/conf.d/xcat-ws.conf

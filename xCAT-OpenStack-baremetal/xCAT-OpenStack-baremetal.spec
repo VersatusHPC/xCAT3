@@ -20,6 +20,7 @@ BuildArch: noarch
 Provides: xCAT-OpenStack-baremetal = %{epoch}:%{version}
 
 Requires: xCAT-client
+BuildRequires: perl-Pod-Html
 
 %description
 xCAT-OpenStack-baremetal provides the baremetal driver for OpenStack.

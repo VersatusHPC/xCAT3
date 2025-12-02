@@ -10,3 +10,17 @@ jobs:
         run: sudo apt-get install -y fakeroot reprepro devscripts debhelper libcapture-tiny-perl libjson-perl libsoap-lite-perl libdbi-perl libcgi-pm-perl quilt openssh-server dpkg looptools genometools software-properties-common
       - name: Run tests
         run: perl github_action_xcat_test.pl
+
+  # Note: github_action_xcat_test.pl is debian dependent, we
+  #       need to generalize it before running on EL
+  # xcat_pr_test_el10:
+  #   runs-on: ubuntu-latest
+  #   container:
+  #     image: rockylinux/rockylinux:10
+  #   timeout-minutes: 60
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - name: Install dependencies
+  #       run: dnf install -y fakeroot perl-Capture-Tiny perl-JSON perl-SOAP-Lite perl-DBI perl-CGI quilt openssh looptools 
+  #     - name: Run tests
+  #       run: perl github_action_xcat_test.pl
