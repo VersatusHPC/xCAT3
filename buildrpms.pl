@@ -106,7 +106,7 @@ sub createmockconfig {
     return if -f $cfgfile && ! $opts{force};
     cp "/etc/mock/$target.cfg", $cfgfile;
     my $contents = read_text($cfgfile);
-    $contents =~ s/config_opts\['root'\]\s\+=.*/config_opts['root'] = \"$chroot\"/;
+    $contents =~ s/config_opts\['root'\]\s+=.*/config_opts['root'] = \"$chroot\"/;
     if ($pkg eq "perl-xCAT") {
         # perl-generators is required for having perl(xCAT::...) symbols
         # exported by the RPM 
