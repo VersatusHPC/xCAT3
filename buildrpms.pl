@@ -63,7 +63,7 @@ GetOptions(
 sub sh {
     my ($cmd) = @_;
     say "Running: $cmd"
-        if $opts{quiet};
+        if $opts{verbose};
     open my $fh, "-|", "bash -lc '$cmd'" or die "cannot run $cmd: $!";
 
     while (my $line = <$fh>) {
