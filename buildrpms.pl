@@ -49,6 +49,7 @@ my %opts = (
     force => 0,
     verbose => 0,
     deps => "$PWD/../xcat-dep/",
+    regennginxconf => 0,
 );
 
 GetOptions(
@@ -58,6 +59,7 @@ GetOptions(
     "verbose" => \$opts{verbose},
     "force" => \$opts{force},
     "deps=s" => \$opts{deps},
+    "regennginxconf" => \$opts{regennginxconf},
 ) or usage();
 
 sub sh {
@@ -209,7 +211,10 @@ server {
     listen 8080;
     listen [::]:8080;
 EOF
-    for my $target ($opts{targets}->@*) {
+
+    # We always generate the nginx config for all
+    # the targets, not $opts{targets}
+    for my $target (@TARGETS) {
         my $fullpath = "$PWD/dist/$target/rpms";
         $conf .= <<"EOF";
     location /$target/ {
@@ -231,6 +236,7 @@ EOF
 }
 EOF
     write_text("/etc/nginx/conf.d/xcat-repos.conf", $conf);
+    `systemctl restart nginx`;
 }
 
 sub update_repo {
@@ -250,6 +256,7 @@ sub usage {
 }
 
 sub main {
+    return configure_nginx() if $opts{regennginxconf};
     my @rpms = product($opts{packages}, $opts{targets});
     my $pm = Parallel::ForkManager->new($opts{nproc});
 
@@ -275,7 +282,6 @@ sub main {
 
     configure_nginx();
 
-    `systemctl restart nginx`;
 }
 
 main();
