@@ -10,13 +10,14 @@ use File::Slurper qw(read_text write_text);
 my %opts = (
     releasever => int(`rpm --eval '%{rhel}'`),
     verbose => 0,
-    setuprepos => 0,
-    installxcat => 0,
-    uninstallxcat => 0,
-    reinstallxcat => 0,
-    validatexcat => 0,
+    setup_repos => 0,
+    install => 0,
+    uninstall => 0,
+    reinstall => 0,
+    validate => 0,
     quiet => 0,
     all => 0,
+    nginx_port => 8080,
 );
 
 GetOptions(
@@ -24,12 +25,13 @@ GetOptions(
     verbose => \$opts{verbose},
     quiet => \$opts{quiet},
     quiet => \$opts{quiet},
-    setuprepos => \$opts{setuprepos},
-    installxcat => \$opts{installxcat},
-    uninstallxcat => \$opts{uninstallxcat},
-    reinstallxcat => \$opts{reinstallxcat},
-    validatexcat => \$opts{validatexcat},
+    setup_repos => \$opts{setup_repos},
+    install => \$opts{install},
+    uninstall => \$opts{uninstall},
+    reinstall => \$opts{reinstall},
+    validate => \$opts{validate},
     all => \$opts{all},
+    nginx_port => \$opts{nginx_port},
 ) or usage();
 
 sub sh {
@@ -47,23 +49,24 @@ sub sh {
 }
 
 sub usage {
-    say STDERR "usage $0: [--releasever=9] [--verbose] [--quiet] {--setuprepos|--isntallxcat|--uninstallxcat|--reinstallxcat|--validatexcat|--all}";
+    say STDERR "usage $0: [--releasever=9] [--verbose] [--quiet] {--setup_repos|--install|--uninstall|--reinstall|--validate|--all} [--nginx-port=8080]";
 }
 
-sub setuprepos {
+sub setup_repos {
     say "Setting up repositories"
         unless $opts{quiet};
     my $releasever = $opts{releasever};
+    my $port = $opts{nginx_port};
     my $content = <<"EOF";
 [xcat3]
 name=xcat3
-baseurl=http://host.containers.internal:8080/rhel+epel-$releasever-x86_64/
+baseurl=http://host.containers.internal:$port/rhel+epel-$releasever-x86_64/
 gpgcheck=0
 enabled=1
 
 [xcat3-deps]
 name=xcat3-deps
-baseurl=http://host.containers.internal:8080/xcat-dep/el$releasever/x86_64/
+baseurl=http://host.containers.internal:$port/xcat-dep/el$releasever/x86_64/
 gpgcheck=0
 enabled=1
 EOF
@@ -71,39 +74,39 @@ EOF
     sh("dnf makecache --repo=xcat3 --repo=xcat3-deps");
 }
 
-sub uninstallxcat {
+sub uninstall {
     sh("dnf remove -y xCAT");
     sh("rm -rf /opt/xcat /etc/xcat /var/run/xcat /root/.xcat /install /tftpboot");
 }
 
-sub installxcat {
+sub install {
     sh("dnf install -y xCAT");
 }
 
-sub validatexcat {
+sub validate {
     # Put commands to validate xcat installation here
     sh("systemctl is-active xcatd") == 0 or die("xcatd not running?");
     sh("lsdef") == 0 or die("lsdef not working");
 }
 
 sub main {
-    return setuprepos() if $opts{setuprepos};
-    return installxcat() if $opts{installxcat};
-    return uninstallxcat() if $opts{uninstallxcat};
-    return validatexcat() if $opts{validatexcat};
+    return setup_repos() if $opts{setup_repos};
+    return install() if $opts{install};
+    return uninstall() if $opts{uninstall};
+    return validate() if $opts{validate};
 
     return do {
-        setuprepos();
-        uninstallxcat()
-            if ($opts{reinstallxcat} or $opts{uninstallxcat});
-        installxcat();
-        validatexcat();
+        setup_repos();
+        uninstall()
+            if ($opts{reinstall} or $opts{uninstall});
+        install();
+        validate();
     } if $opts{all};
 
     return do {
-        uninstallxcat();
-        installxcat();
-    } if $opts{reinstallxcat};
+        uninstall();
+        install();
+    } if $opts{reinstall};
 
     usage();
 }

@@ -21,25 +21,25 @@ sub sh {
 }
 
 sub usage {
-    say STDERR "Usage: $0 [--setupcontainer --target rhel+epel-9-x86_64]";
+    say STDERR "Usage: $0 --setup_container --target <target> [--force]";
     exit -1;
 }
 
 sub parseopts {
     my %opts = (
         target => "",
-        setupcontainer => 0,
+        setup_container => 0,
         force => 0,
     );
 
     GetOptions(
         "target=s" => \$opts{target},
-        "setupcontainer" => \$opts{setupcontainer},
+        "setup_container" => \$opts{setup_container},
         "force" => \$opts{force},
     ) or usage();
 
     usage() 
-        if $opts{setupcontainer}
+        if $opts{setup_container}
             and not $opts{target};
 
 
@@ -65,7 +65,7 @@ podman rmi -f $image
 EOF
 }
 
-sub setupcontainer {
+sub setup_container {
     my ($opts) = @_;
     my $target = $opts->{target};
 
@@ -96,7 +96,7 @@ EOF
 sub main {
     my $opts = parseopts();
 
-    return setupcontainer($opts) if $opts->{setupcontainer};
+    return setup_container($opts) if $opts->{setup_container};
 
 
     usage();

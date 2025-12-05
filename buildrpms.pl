@@ -48,8 +48,10 @@ my %opts = (
     nproc => int(`nproc --all`),
     force => 0,
     verbose => 0,
-    deps => "$PWD/../xcat-dep/",
-    regennginxconf => 0,
+    xcat_dep_path => "$PWD/../xcat-dep/",
+    configure_nginx => 0,
+    help => 0,
+    nginx_port => 8080,
 );
 
 GetOptions(
@@ -58,8 +60,10 @@ GetOptions(
     "nproc=i" => \$opts{nproc},
     "verbose" => \$opts{verbose},
     "force" => \$opts{force},
-    "deps=s" => \$opts{deps},
-    "regennginxconf" => \$opts{regennginxconf},
+    "xcat_dep_path=s" => \$opts{xcat_dep_path},
+    "configure_nginx" => \$opts{configure_nginx},
+    "help" => \$opts{help},
+    "nginx_port" => \$opts{nginx_port},
 ) or usage();
 
 sub sh {
@@ -205,11 +209,12 @@ sub buildall {
 }
 
 sub configure_nginx {
-    my $deps = $opts{deps};
+    my $xcat_dep_path = $opts{xcat_dep_path};
+    my $port = $opts{nginx_port};
     my $conf = <<"EOF";
 server {
-    listen 8080;
-    listen [::]:8080;
+    listen $port;
+    listen [::]:$port;
 EOF
 
     # We always generate the nginx config for all
@@ -228,7 +233,7 @@ EOF
     # TODO:I need one xcat-dep for each target
     $conf .= <<"EOF";
     location /xcat-dep/ {
-        alias $deps; 
+        alias $xcat_dep_path; 
         autoindex on;
         index off;
         allow all;
@@ -250,13 +255,34 @@ sub update_repo {
 sub usage {
     my ($errmsg) = @_;
     say STDERR "Usage: $0 [--package=<pkg1>] [--target=<tgt1>] [--package=<pgk2>] [--target=<tgt2>] ...";
+    say STDERR "";
+    say STDERR "  RPM builder script";
+    say STDERR "     .. build xCAT RPMs for these targets:";
+    say STDERR map { "     $_\n" } @TARGETS;
+    say STDERR "";
+    say STDERR " Options:";
+    say STDERR "";
+    say STDERR "  --target <tgt> .................. build only these targets";
+    say STDERR "  --package <pkg> ................. build only these packages";
+    say STDERR "  --force ......................... override built RPMS";
+    say STDERR "  --configure_nginx ............... update nginx configuration";
+    say STDERR "  --nginx_port=8080 ............... change the nginx port in";
+    say STDERR "                                 (use with --configure_nginx)";
+    say STDERR "  --nproc <N> ..................... run up to N jobs in parallel";
+    say STDERR "  --xcat_dep_path=../xcat-dep ..... path to xcat-dep repositories";
+    say STDERR "";
+    say STDERR " If no --target or --package is given all combinations are built";
+    say STDERR "";
+    say STDERR " See test/README.md for more information";
 
     say STDERR $errmsg if $errmsg;
     exit -1;
 }
 
 sub main {
-    return configure_nginx() if $opts{regennginxconf};
+    return usage() if $opts{help};
+    return configure_nginx() if $opts{configure_nginx};
+
     my @rpms = product($opts{packages}, $opts{targets});
     my $pm = Parallel::ForkManager->new($opts{nproc});
 

@@ -86,7 +86,7 @@ podman exec -it xcattest-el10 scripts/testxcat.pl --all
 
 - Replace `xcattest-el10` with the appropriate container name. The script configures the repository inside the container, installs xCAT, ensures `xcatd` is running, and finally runs `lsdef` to verify daemon connectivity.
 - You can safely rerun the command; it will reuse the container state unless `--force` is supplied to the helper scripts.
-- In this case you call combine `--force` with `--reinstallxcat` to make it remove xCAT completely and reinstalling again.
+- In this case you call combine `--force` with `--reinstall` to make it remove xCAT completely and reinstalling again.
 
 ## End-to-End Checklist
 - Dependencies extracted to `../xcat-dep` for all EL versions you plan to build.
