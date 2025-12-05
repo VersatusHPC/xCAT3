@@ -22,6 +22,7 @@ chomp($VERSION);
 chomp($RELEASE);
 chomp($GITINFO);
 
+
 my @PACKAGES = qw(
     perl-xCAT
     xCAT
@@ -40,7 +41,38 @@ my @TARGETS = qw(
     rhel+epel-9-x86_64
     rhel+epel-10-x86_64);
 
-my $NPROC = `nproc --all`;
+
+my %opts = (
+    targets => \@TARGETS,
+    packages => \@PACKAGES,
+    nproc => int(`nproc --all`),
+    force => 0,
+    verbose => 0,
+    deps => "$PWD/../xcat-dep/",
+);
+
+GetOptions(
+    "target=s@" => \$opts{targets},
+    "package=s@" => \$opts{packages},
+    "nproc=i" => \$opts{nproc},
+    "verbose" => \$opts{verbose},
+    "force" => \$opts{force},
+    "deps=s" => \$opts{deps},
+) or usage();
+
+sub sh {
+    my ($cmd) = @_;
+    say "Running: $cmd"
+        if $opts{quiet};
+    open my $fh, "-|", "bash -lc '$cmd'" or die "cannot run $cmd: $!";
+
+    while (my $line = <$fh>) {
+        print $line
+            if $opts{verbose};
+    }
+    close $fh;
+    return $? >> 8;
+}
 
 # cp $src, $dst copies $src to $dst or aborts with an error message
 sub cp {
@@ -71,7 +103,7 @@ sub createmockconfig {
     my ($pkg, $target) = @_;
     my $chroot = "$pkg-$target";
     my $cfgfile = "/etc/mock/$chroot.cfg";
-    return if -f $cfgfile;
+    return if -f $cfgfile && ! $opts{force};
     cp "/etc/mock/$target.cfg", $cfgfile;
     my $contents = read_text($cfgfile);
     $contents =~ s/config_opts\['root'\]\s\+=.*/config_opts['root'] = \"$chroot\"/;
@@ -109,72 +141,75 @@ sub buildsources {
 }
 
 sub buildspkgs {
-    my ($pkg, $target, $optsref) = @_;
+    my ($pkg, $target) = @_;
     my $chroot = "$pkg-$target";
 
     my $diskcache = "dist/$target/srpms/$pkg-$VERSION-$RELEASE.src.rpm";
-    return if -f $diskcache and not $optsref->{force};
+    return if -f $diskcache and not $opts{force};
 
     my @opts;
-    push @opts, "--quiet" unless $optsref->{verbose};
+    push @opts, "--quiet" unless $opts{verbose};
 
     say "Building $diskcache";
 
-    `mock -r $chroot \\
-        -N \\
-        @{[ join "  ", @opts ]} \\
-        --define "version $VERSION" \\
-        --define "release $RELEASE" \\
-        --define "gitinfo $GITINFO" \\
-        --buildsrpm \\
-        --spec $pkg/$pkg.spec \\
-        --sources $SOURCES \\
-        --resultdir "dist/$target/srpms/"`;
+    sh(<<"EOF");
+mock -r $chroot \\
+    -N \\
+    @{[ join "  ", @opts ]} \\
+    --define "version $VERSION" \\
+    --define "release $RELEASE" \\
+    --define "gitinfo $GITINFO" \\
+    --buildsrpm \\
+    --spec $pkg/$pkg.spec \\
+    --sources $SOURCES \\
+    --resultdir "dist/$target/srpms/"
+EOF
 }
 
 sub buildpkgs {
-    my ($pkg, $target, $optsref) = @_;
+    my ($pkg, $target) = @_;
+    my $optsref = \%opts;
     my $chroot = "$pkg-$target";
 
     my $targetarch = (split /-/, $target, 3)[2];
     my $arch = $pkg eq "xCAT" ? $targetarch : "noarch";
 
     my $diskcache = "dist/$target/rpms/$pkg-$VERSION-$RELEASE.$arch.rpm";
-    return if -f $diskcache and not $optsref->{force};
+    return if -f $diskcache and not $opts{force};
 
     my @opts;
-    push @opts, "--quiet" unless $optsref->{verbose};
+    push @opts, "--quiet" unless $opts{verbose};
 
     say "Building $diskcache";
 
-    `mock -r $chroot \\
-        -N \\
-        @{[ join "  ", @opts ]} \\
-        --define "version $VERSION" \\
-        --define "release $RELEASE" \\
-        --define "gitinfo $GITINFO" \\
-        --resultdir "dist/$target/rpms/" \\
-        --rebuild dist/$target/srpms/$pkg-${VERSION}-${RELEASE}.src.rpm`;
+    sh(<<"EOF");
+mock -r $chroot \\
+    -N \\
+    @{[ join "  ", @opts ]} \\
+    --define "version $VERSION" \\
+    --define "release $RELEASE" \\
+    --define "gitinfo $GITINFO" \\
+    --resultdir "dist/$target/rpms/" \\
+    --rebuild dist/$target/srpms/$pkg-${VERSION}-${RELEASE}.src.rpm
+EOF
 }
 
 sub buildall {
-    my ($pkg, $target, $optsref) = @_;
-    createmockconfig($pkg, $target, $optsref);
-    buildsources($pkg, $target, $optsref);
-    buildspkgs($pkg, $target, $optsref);
-    buildpkgs($pkg, $target, $optsref);
+    my ($pkg, $target) = @_;
+    createmockconfig($pkg, $target);
+    buildsources($pkg, $target);
+    buildspkgs($pkg, $target);
+    buildpkgs($pkg, $target);
 }
 
 sub configure_nginx {
-    my ($args) = @_;
-    my @targets = $args->{targets}->@*;
-    my $deps = $args->{deps};
+    my $deps = $opts{deps};
     my $conf = <<"EOF";
 server {
     listen 8080;
     listen [::]:8080;
 EOF
-    for my $target (@targets) {
+    for my $target ($opts{targets}->@*) {
         my $fullpath = "$PWD/dist/$target/rpms";
         $conf .= <<"EOF";
     location /$target/ {
@@ -214,54 +249,31 @@ sub usage {
     exit -1;
 }
 
-sub parseopts {
-    my %opts = (
-        targets => \@TARGETS,
-        packages => \@PACKAGES,
-        nproc => int(`nproc --all`),
-        force => 0,
-        verbose => 0,
-        deps => "$PWD/../xcat-dep/",
-    );
-    GetOptions(
-        "target=s@" => \$opts{targets},
-        "package=s@" => \$opts{packages},
-        "nproc=i" => \$opts{nproc},
-        "verbose" => \$opts{verbose},
-        "force" => \$opts{force},
-        "deps=s" => \$opts{deps},
-    ) or usage();
-
-    return \%opts;
-
-};
-
 sub main {
-    my $opts = parseopts();
-    my @rpms = product($opts->{packages}, $opts->{targets});
-    my $pm = Parallel::ForkManager->new($opts->{nproc});
+    my @rpms = product($opts{packages}, $opts{targets});
+    my $pm = Parallel::ForkManager->new($opts{nproc});
 
     for my $pair (@rpms) {
         my ($pkg, $target) = $pair->@*;
         $pm->start and next;
 
-        buildall($pkg, $target, $opts);
+        buildall($pkg, $target);
 
         $pm->finish;
     }
 
     $pm->wait_all_children;
 
-    for my $target ($opts->{targets}->@*) {
+    for my $target ($opts{targets}->@*) {
         $pm->start and next;
 
-        update_repo($target, $opts);
+        update_repo($target);
 
         $pm->finish;
     }
     $pm->wait_all_children;
 
-    configure_nginx($opts);
+    configure_nginx();
 
     `systemctl restart nginx`;
 }

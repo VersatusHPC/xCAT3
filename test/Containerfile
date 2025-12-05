@@ -1,0 +1,10 @@
+ARG RELEASEVER=9
+FROM quay.io/rockylinux/rockylinux:${RELEASEVER}-ubi-init
+
+RUN dnf install -y epel-release
+RUN dnf config-manager --set-enabled epel crb
+RUN dnf makecache
+RUN dnf install -y hostname perl perl-core perl-generators iproute net-tools bind-utils openssh-clients python3 perl-Net-IP perl-Sys-Syslog wget perl-IO perl-File-Copy perl-File-Basename perl-File-Slurper perl-Parallel-ForkManager perl-JSON perl-Data-Dumper
+RUN dnf clean all
+
+WORKDIR /workspace
