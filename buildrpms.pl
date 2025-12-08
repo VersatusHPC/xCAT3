@@ -26,6 +26,7 @@ chomp($GITINFO);
 my @PACKAGES = qw(
     perl-xCAT
     xCAT
+    xCATsn
     xCAT-buildkit
     xCAT-client
     xCAT-confluent
@@ -52,6 +53,7 @@ my %opts = (
     configure_nginx => 0,
     help => 0,
     nginx_port => 8080,
+    step => "",
 );
 
 GetOptions(
@@ -64,13 +66,14 @@ GetOptions(
     "configure_nginx" => \$opts{configure_nginx},
     "help" => \$opts{help},
     "nginx_port" => \$opts{nginx_port},
+    "step=s" => \$opts{step},
 ) or usage();
 
 sub sh {
     my ($cmd) = @_;
-    say "Running: $cmd"
-        if $opts{verbose};
-    open my $fh, "-|", "bash -lc '$cmd'" or die "cannot run $cmd: $!";
+    my $debug = ":";
+    $debug = "set -x" if $opts{verbose};
+    open my $fh, "-|", "bash -lc '$debug; $cmd'" or die "cannot run $cmd: $!";
 
     while (my $line = <$fh>) {
         print $line
@@ -130,19 +133,31 @@ sub buildsources {
             cp "xCAT-genesis-scripts/usr/bin/$f", "$pkg/postscripts/$f";
             sed { s/xcat.genesis.$f/$f/ } "${pkg}/postscripts/$f";
         }
-        qx {bash -c '
-          cd xCAT
-          tar --exclude upflag -czf $SOURCES/postscripts.tar.gz  postscripts LICENSE.html
-          tar -czf $SOURCES/prescripts.tar.gz  prescripts
-          tar -czf $SOURCES/templates.tar.gz templates
-          tar -czf $SOURCES/winpostscripts.tar.gz winpostscripts
-          tar -czf $SOURCES/etc.tar.gz etc
-          cp xcat.conf $SOURCES
-          cp xcat.conf.apach24 $SOURCES
-          cp xCATMN $SOURCES
-        '};
+        # We need bash -c to preserve cd across commands
+        sh(<<"EOF");
+cd xCAT
+tar --exclude upflag -czf $SOURCES/postscripts.tar.gz  postscripts LICENSE.html
+tar -czf $SOURCES/prescripts.tar.gz  prescripts
+tar -czf $SOURCES/templates.tar.gz templates
+tar -czf $SOURCES/winpostscripts.tar.gz winpostscripts
+tar -czf $SOURCES/etc.tar.gz etc
+cp xcat.conf $SOURCES
+cp xcat.conf.apach24 $SOURCES
+cp xCATMN $SOURCES
+EOF
+
+    } elsif ($pkg eq "xCATsn") {
+        sh(<<"EOF");
+cd xCATsn
+tar --exclude .svn -czf $SOURCES/xcat-sn-configs.tar.gz \\
+    -C ../xCAT etc/rsyslog.d etc/logrotate.d
+tar --exclude .svn -czf $SOURCES/license.tar.gz LICENSE.html
+cp xcat.conf $SOURCES
+cp xcat.conf.apach24 $SOURCES
+cp xCATSN $SOURCES
+EOF
     } else {
-      `tar -czf "$SOURCES/$pkg-$VERSION.tar.gz" $pkg`;
+      sh("tar -czf \"$SOURCES/$pkg-$VERSION.tar.gz\" $pkg");
     }
 }
 
@@ -241,14 +256,33 @@ EOF
 }
 EOF
     write_text("/etc/nginx/conf.d/xcat-repos.conf", $conf);
-    `systemctl restart nginx`;
+    sh("systemctl restart nginx");
 }
 
 sub update_repo {
     my ($target) = @_;
     say "Creating repository dist/$target/rpms";
-    `find dist/$target/rpms -name ".src.rpm" -delete`;
-    `createrepo --update dist/$target/rpms`;
+    sh(<<"EOF");
+find dist/$target/rpms -name "*.src.rpm" -delete
+createrepo --update dist/$target/rpms
+EOF
+}
+
+sub run_step {
+    my ($step) = @_;
+    my %steps = (
+        source => \&buildsources,
+        srpm => \&buildspkgs,
+        rpm => \&buildpkgs,
+    );
+    die "Invalid step $step, expect one of: @{[ join ',', keys %steps ]}"
+        unless $steps{$step};
+
+    my @rpms = product($opts{packages}, $opts{targets});
+    for my $pair (@rpms) {
+        my ($pkg, $target) = $pair->@*;
+        $steps{$step}->($pkg, $target);
+    }
 }
 
 
@@ -282,6 +316,7 @@ sub usage {
 sub main {
     return usage() if $opts{help};
     return configure_nginx() if $opts{configure_nginx};
+    return run_step($opts{step}) if $opts{step};
 
     my @rpms = product($opts{packages}, $opts{targets});
     my $pm = Parallel::ForkManager->new($opts{nproc});
@@ -311,4 +346,3 @@ sub main {
 }
 
 main();
-

@@ -16,6 +16,7 @@ Source2: license.tar.gz
 Source3: xCATSN
 Source5: templates.tar.gz
 Source6: xcat.conf.apach24
+Source7: xcat-sn-configs.tar.gz
 Requires: perl-DBD-SQLite
 Requires: xCAT-client = 4:%{version}-%{release}
 Requires: xCAT-server = 4:%{version}-%{release}
@@ -84,6 +85,7 @@ cp %{SOURCE2} /opt/freeware/src/packages/BUILD
 gunzip -f license.tar.gz
 tar -xf license.tar
 %endif
+tar zxf %{SOURCE7}
 
 %build
 
@@ -101,8 +103,8 @@ cp %{SOURCE1} $RPM_BUILD_ROOT/etc/httpd/conf.d/xcat.conf
 cp %{SOURCE3} $RPM_BUILD_ROOT/etc/xCATSN
 cp %{SOURCE1} $RPM_BUILD_ROOT/etc/xcat/conf.orig/xcat.conf.apach22
 cp %{SOURCE6} $RPM_BUILD_ROOT/etc/xcat/conf.orig/xcat.conf.apach24
-cp -a  etc/rsyslog.d/* $RPM_BUILD_ROOT/etc/xcat/rsyslog.conf/
-cp -a  etc/logrotate.d/* $RPM_BUILD_ROOT/etc/xcat/logrotate.conf/
+cp -a etc/rsyslog.d/* $RPM_BUILD_ROOT/etc/xcat/rsyslog.conf/
+cp -a etc/logrotate.d/* $RPM_BUILD_ROOT/etc/xcat/logrotate.conf/
 
 mkdir -p $RPM_BUILD_ROOT/%{prefix}/share/doc/packages/xCAT
 cp LICENSE.html $RPM_BUILD_ROOT/%{prefix}/share/doc/packages/xCAT
