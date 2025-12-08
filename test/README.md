@@ -49,20 +49,26 @@ The expected structure is like this
 
 ## Building RPMs for a Target
 ```bash
-./buildrpms.pl --target <target> [--force]
+./buildrpms.pl [--target <target>] [--package <pkg>] [--force] [--nproc N] [--xcat_dep_path /path/to/xcat-dep] [--nginx_port 8080]
 ```
 
-- The script invokes [mock](https://rpm-software-management.github.io/mock/) for the requested target to build *all* RPMs listed for that target. The target name maps to the chroot definition under `/etc/mock/`.
-- Before building `X.rpm`, the script checks whether the file already exists and skips it; use `--force` to rebuild the RPM even if the file is present **this is important if the source code changed since the last build!**.
-- When the build finishes, the script collects the RPMs, runs `createrepo` and writes an nginx configuration snippet so the repo can be served.
+- `--target` may be repeated; by default all supported targets (`rhel+epel-{8,9,10}-x86_64`) are built.
+- `--package` narrows the build to specific RPM names; the default list contains every xCAT component.
+- `--force` rebuilds even if the corresponding SRPM/RPM already exists under `dist/<target>/`.
+- `--nproc N` controls the amount of parallel mock jobs (defaults to `nproc --all`).
+- `--xcat_dep_path` tells the nginx helper where the dependency repos live (defaults to `../xcat-dep`).
+- `--nginx_port` changes the port used when generating `/etc/nginx/conf.d/xcat-repos.conf`.
+- Passing `--configure_nginx` alone regenerates the nginx configuration without building.
 
-You can build a single package by specifying in the command line for example
+Example – rebuild only `perl-xCAT` for EL9 and overwrite previous artifacts:
 
 ```bash
 ./buildrpms.pl --target rhel+epel-9-x86_64 --package perl-xCAT --force
 ```
 
-All builds run in parallel, use `--nproc N` to control the number of jobs. Also note that this will use a lot of disk space, at last 50G is required since the last run. The directories that grow are `/var/lib/mock` and `/var/cache/mock`.
+Under the hood the script invokes [mock](https://rpm-software-management.github.io/mock/) to build SRPMs and RPMs, skips work when files already exist (unless `--force` is used), runs `createrepo dist/<target>/rpms`, and finally rewrites the nginx configuration so the repo is served automatically.
+
+All builds run in parallel according to `--nproc`. Be aware that mock consumes significant disk space (plan for at least ~50 GB between `/var/lib/mock` and `/var/cache/mock`).
 
 ### nginx on Port 8080
 - `buildrpms.pl` assumes nginx exposes the generated repository on port 8080. Manually update the main nginx configuration (for example `/etc/nginx/nginx.conf`) so that it listens on `8080` port. The scripts will create a `/etc/nginx/conf.d/xcat-repos.conf` file with all the repositories configured and restart
@@ -70,7 +76,7 @@ nginx at each run.
 
 ## Preparing the Test Container
 ```bash
-test/scripts/setuptesthost.pl --setupcontainer --target <target> [--force]
+test/scripts/setuptesthost.pl --setup_container --target <target> [--force]
 ```
 
 - This builds a container image and creates a container named `xcattest-elX` (X is 8, 9 or 10 depending on the target).
@@ -85,8 +91,8 @@ podman exec -it xcattest-el10 scripts/testxcat.pl --all
 ```
 
 - Replace `xcattest-el10` with the appropriate container name. The script configures the repository inside the container, installs xCAT, ensures `xcatd` is running, and finally runs `lsdef` to verify daemon connectivity.
-- You can safely rerun the command; it will reuse the container state unless `--force` is supplied to the helper scripts.
-- In this case you call combine `--force` with `--reinstall` to make it remove xCAT completely and reinstalling again.
+- The tester exposes additional knobs: use `--setup_repos`, `--install`, `--uninstall`, `--reinstall`, `--validate`, or `--all` (default in the example) plus `--nginx_port` if your repo is served on a different port. Combine these as needed to drive just one phase or the entire install/validate pass.
+- You can safely rerun the command; it will reuse the container state unless `--force` is supplied to the helper scripts, and `--reinstall` forces a clean uninstall/install cycle inside the container.
 
 ## End-to-End Checklist
 - Dependencies extracted to `../xcat-dep` for all EL versions you plan to build.

@@ -24,7 +24,6 @@ GetOptions(
     'releasever=i' => \$opts{releasever},
     verbose => \$opts{verbose},
     quiet => \$opts{quiet},
-    quiet => \$opts{quiet},
     setup_repos => \$opts{setup_repos},
     install => \$opts{install},
     uninstall => \$opts{uninstall},
