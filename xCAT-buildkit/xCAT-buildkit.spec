@@ -12,6 +12,8 @@ Distribution: %{?_distribution:%{_distribution}}%{!?_distribution:%{_vendor}}
 Prefix: /opt/xcat
 BuildRoot: /var/tmp/%{name}-%{version}-%{release}-root
 
+BuildRequires: perl-Pod-Html
+
 #%ifnos linux
 AutoReqProv: no
 #%endif

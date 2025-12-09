@@ -61,6 +61,13 @@ if [ -f /etc/init.d/functions ]; then
   LOG_SUCCESS=RHSuccess
   LOG_FAILURE=RHFailure
   LOG_WARNING=passed
+elif [ -f /etc/rc.d/init.d/functions ]; then
+  . /etc/rc.d/init.d/functions
+  START_DAEMON=daemon
+  STATUS=MStatus
+  LOG_SUCCESS=RHSuccess
+  LOG_FAILURE=RHFailure
+  LOG_WARNING=passed
 elif [ -f /lib/lsb/init-functions ]; then
   . /lib/lsb/init-functions
   START_DAEMON=start_daemon

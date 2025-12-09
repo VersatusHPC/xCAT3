@@ -1,0 +1,20 @@
+ARG RELEASEVER=9
+FROM quay.io/rockylinux/rockylinux:${RELEASEVER}-ubi-init
+ARG RELEASEVER
+
+RUN dnf install -y epel-release
+
+RUN echo "RELEASEVER=${RELEASEVER}"
+RUN if [[ "${RELEASEVER}" == "8" ]]; then \
+        dnf config-manager --set-enabled powertools epel; \
+    elif [[ "${RELEASEVER}" =~ /(9|10)/ ]]; then \
+        dnf config-manager --set-enabled crb epel; \
+    else \
+        echo "Invalid RELEASEVER=${RELEASEVER}"; \
+        exit -1; \
+    fi
+RUN dnf makecache
+RUN dnf install -y hostname perl perl-core
+RUN dnf clean all
+
+WORKDIR /workspace

@@ -843,6 +843,9 @@ sub genSSHRootKeys
 sub settunables
 
 {
+    # tunnables are not settable inside containers, we use
+    # container for integration testing
+    return if $ENV{container};
     # tuning ARP on Linux
     # set for right now
 
