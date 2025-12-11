@@ -68,9 +68,9 @@ GetOptions(
 
 sub sh {
     my ($cmd) = @_;
-    say "Running: $cmd"
-        if $opts{verbose};
-    open my $fh, "-|", "bash -lc '$cmd'" or die "cannot run $cmd: $!";
+    my $debug = "";
+    $debug = "set -x;" if $opts{verbose};
+    open my $fh, "-|", "bash -lc '$debug $cmd'" or die "cannot run $cmd: $!";
 
     while (my $line = <$fh>) {
         print $line
@@ -178,7 +178,7 @@ sub buildpkgs {
     my $chroot = "$pkg-$target";
 
     my $targetarch = (split /-/, $target, 3)[2];
-    my $arch = $pkg eq "xCAT" ? $targetarch : "noarch";
+    my $arch = $pkg =~ /^(xCAT|xCATsn)$/ ? $targetarch : "noarch";
 
     my $diskcache = "dist/$target/rpms/$pkg-$VERSION-$RELEASE.$arch.rpm";
     return if -f $diskcache and not $opts{force};
@@ -251,6 +251,24 @@ sub update_repo {
     `createrepo --update dist/$target/rpms`;
 }
 
+sub tar_repo {
+    my ($target) = @_;
+
+    my ($distro, $releasever, $arch) = split /-/, $target, 3;
+    my $dep = $opts{xcat_dep_path};
+    die "Cannot parse $target" unless defined $releasever && defined $arch;
+
+    say "Packaging merged repo at dist/el$releasever-$GITINFO.tar.gz";
+
+    sh(<<"EOF");
+test -d dist/merged/el$releasever/$arch || mkdir -p dist/merged/el$releasever/$arch
+cp dist/$target/rpms/*.rpm dist/merged/el$releasever/$arch/
+cp $dep/el$releasever/$arch/*.rpm dist/merged/el$releasever/$arch/
+createrepo dist/merged/el$releasever/
+tar czf dist/el$releasever-$GITINFO.tar.gz -C dist/merged/ el$releasever/
+EOF
+
+}
 
 sub usage {
     my ($errmsg) = @_;
@@ -270,6 +288,7 @@ sub usage {
     say STDERR "                                 (use with --configure_nginx)";
     say STDERR "  --nproc <N> ..................... run up to N jobs in parallel";
     say STDERR "  --xcat_dep_path=../xcat-dep ..... path to xcat-dep repositories";
+    say STDERR "  --step={source,srpm,rpm} ........ run a single step";
     say STDERR "";
     say STDERR " If no --target or --package is given all combinations are built";
     say STDERR "";
@@ -301,6 +320,7 @@ sub main {
         $pm->start and next;
 
         update_repo($target);
+        tar_repo($target);
 
         $pm->finish;
     }
