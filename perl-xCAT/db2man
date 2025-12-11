@@ -15,11 +15,19 @@ use xCAT::Schema;
 use xCAT::Table;
 use Pod::Man;
 use Pod::Html;
+use Cwd qw();
 
 my $poddir   = 'pods';
 my $mandir   = 'share/man';
 my $htmldir  = 'share/doc';
 my $cachedir = "$ENV{'HOME'}/tmp";
+if ($cachedir =~ /sbuild-nonexistent/) {
+    # Fix build with sbuild. sbuild will not
+    # allow writes outside of the CWD or /tmp
+    my $cwd = Cwd::cwd();
+    $cachedir = "$cwd/tmp";
+}
+
 if (system("mkdir -p $cachedir")) { die "Error: could not create $cachedir.\n"; }
 my $isaix     = ($^O =~ /^aix/i);
 my $skiponaix = 'route|group';

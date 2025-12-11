@@ -80,7 +80,8 @@ echo "This is an Ubuntu system"
 
  done
      #delete all files except  .deb file
-     find $CURDIR/build/* ! -name *.deb | xargs rm -f
+     test -z "$KEEP_BUILD_ARTIFACTS" &&
+         find $CURDIR/build/* ! -name *.deb | xargs rm -f
 
 else
 #This is not an Ubuntu system
