@@ -1,0 +1,14 @@
+# xCAT is traditionally installed to /opt
+xcat-server: dir-or-file-in-opt
+# xcat-server: aliased-location [lib/]
+# xcat-server: aliased-location [lib/systemd/]
+# xcat-server: aliased-location [lib/systemd/system/]
+# xcat-server: aliased-location ... use "--tag-display-limit 0" to see all (or pipe to a file/program)
+xcat-server: apache2-reverse-dependency-ships-file-in-not-allowed-directory
+xcat-server: bogus-mail-host-in-debian-changelog
+xcat-server: init.d-script-does-not-implement-required-option
+xcat-server: init.d-script-missing-dependency-on-local_fs
+xcat-server: missing-dep-for-interpreter
+xcat-server: postrm-does-not-call-updaterc.d-for-init.d-script etc/init.d/xcatd [postrm]
+xcat-server: python3-script-but-no-python3-dep
+xcat-server: shell-script-fails-syntax-check
