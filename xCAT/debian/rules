@@ -25,6 +25,12 @@ install:
 	dh_install -X".svn"
 	dh_link
 
+build-indep:
+	# nothing to do
+  
+build-arch:
+	# nothing to do
+
 # Build architecture-independent files here.
 binary-indep: build install
 # We have nothing to do by default.
@@ -37,6 +43,7 @@ binary-arch:
 	dh_testroot
 	dh_installchangelogs
 	dh_installdocs
+	dh_lintian
 #	dh_installexamples
 	dh_install -X".svn"
 #	chmod 755 `pwd`/debian/xcat/install/postscripts/*

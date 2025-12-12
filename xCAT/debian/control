@@ -2,7 +2,7 @@ Source: xcat
 Section: admin
 Priority: extra
 Maintainer: xCAT <xcat-user@lists.sourceforge.net>
-Build-Depends: debhelper (>= 9)
+Build-Depends: debhelper-compat (= 13), quilt
 Standards-Version: 3.9.4
 Vcs-browser: https://github.com/xcat2/xcat-core.git
 Homepage: https://xcat.org/
