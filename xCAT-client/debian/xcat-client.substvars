@@ -1,2 +1,3 @@
+perl:Depends=perl:any
 misc:Depends=
-perl:Depends=perl
+misc:Pre-Depends=
