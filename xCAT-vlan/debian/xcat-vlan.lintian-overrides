@@ -1,0 +1,12 @@
+# xCAT is traditionally installed to /opt
+xcat-vlan: bogus-mail-host
+xcat-vlan: bogus-mail-host-in-debian-changelog
+xcat-vlan: description-starts-with-package-name
+xcat-vlan: dir-or-file-in-opt
+xcat-vlan: extended-description-is-empty
+xcat-vlan: helper-templates-in-copyright
+xcat-vlan: lengthy-symlink
+xcat-vlan: missing-dep-for-interpreter
+xcat-vlan: no-copyright-file
+xcat-vlan: non-standard-toplevel-dir
+xcat-vlan: root-in-contact

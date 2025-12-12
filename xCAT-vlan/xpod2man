@@ -16,6 +16,9 @@ my $poddir   = 'pods';
 my $mandir   = 'share/man';
 my $htmldir  = 'share/doc';
 my $cachedir = "$ENV{'HOME'}/tmp";
+$cachedir = "$ENV{CURDIR}/tmp"
+  if $cachedir =~ /sbuild-nonexistent/;
+
 if (system("mkdir -p $cachedir")) { die "Error: could not create $cachedir.\n"; }
 
 my @pods = getPodList($poddir);
