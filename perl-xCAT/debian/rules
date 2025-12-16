@@ -54,7 +54,7 @@ binary-arch: build install
 	chmod 644 `pwd`/debian/perl-xcat/opt/xcat/share/doc/man5/*
 	chmod 644 `pwd`/debian/perl-xcat/opt/xcat/share/man/man7/*
 	chmod 644 `pwd`/debian/perl-xcat/opt/xcat/share/doc/man7/*
-	./modifyUtils $(DEB_VERSION_UPSTREAM)  `cat Gitinfo`
+	./modifyUtils $(shell dpkg-parsechangelog --show-field Version)  $(shell cat Gitinfo)
 #	dh_installmenu
 #	dh_installdebconf	
 #	dh_installlogrotate
