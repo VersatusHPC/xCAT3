@@ -17,6 +17,7 @@ clean:
 	dh_testdir
 	dh_testroot
 	dh_clean -d
+	# rm -vf $(CURDIR)/../perl-xcat*.{debian.tar.gz,build,buildinfo,debian,changes,dsc,deb}
 
 install:
 	dh_testdir

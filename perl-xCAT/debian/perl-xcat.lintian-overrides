@@ -1,2 +1,3 @@
 # xCAT is traditionally installed to /opt
 perl-xcat: dir-or-file-in-opt
+perl-xcat: source-is-missing
