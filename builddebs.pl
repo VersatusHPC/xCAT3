@@ -10,20 +10,41 @@ use File::Basename qw(basename);
 use Cwd qw(cwd);
 use Carp qw(croak);
 use FindBin qw();
+use Test::More;
+
+my @DEPS = qw(
+  libparallel-forkmanager-perl
+  libscalar-list-utils-perl
+);
+
+eval {
+  my $dep = "";
+  require Parallel::ForkManager;
+  require List::Util;
+  Parallel::ForkManager->import();
+  List::Utils->import();
+  1;
+} or die(<<"EOF");
+Error while loading dependencies, run
+
+  apt install -y @{[ join " ", @DEPS ]}
+
+and try again.
+EOF
+
 
 my @PACKAGES = qw(
   perl-xCAT
   xCAT
+  xCATsn
   xCAT-client
   xCAT-server
   xCAT-vlan
-
-  xCATsn
   xCAT-test
 );
 # xCAT-genesis-scripts
 
-my @RELEASES = qw(
+my @TARGETS = qw(
   jammy
   noble
   resolute
@@ -32,9 +53,17 @@ my @RELEASES = qw(
 my %opts = (
   help => 0,
   create_tarball => "",
+  build_source_package => "",
+  build_package => "",
+  build_all => 0,
+  targets => \@TARGETS,
+  packages => \@PACKAGES,
   verbose => 0,
   force => 0,
+  init_all => 0,
   init => "",
+  nproc => int(`nproc --all`),
+  test => 0,
 );
 
 GetOptions(
@@ -42,7 +71,14 @@ GetOptions(
   "force" => \$opts{force},
   "verbose" => \$opts{verbose},
   "create-tarball=s" => \$opts{create_tarball},
+  "build-source-package=s" => \$opts{build_source_package},
+  "build-package=s" => \$opts{build_package},
+  "build-all" => \$opts{build_all},
+  "target=s@" => \$opts{targets},
+  "package=s@" => \$opts{packages},
   "init=s" => \$opts{init},
+  "init-all" => \$opts{init_all},
+  "test" => \$opts{test},
 ) or usage();
 
 
@@ -64,15 +100,33 @@ sub sh {
 
 sub usage {
   say STDERR "Usage:";
-  say STDERR "$0 --help .............. displays this help message";
-  say STDERR "$0 --force ............. recreate files";
-  say STDERR "$0 --create-tarball <path> .... create the pristine tarball for <path>";
-  say STDERR "$0 --init <release> .... Setup distro caches (run once)";
-  say STDERR "     where <release> := @{[ join '|', @RELEASES ]}";
+  say STDERR "$0 --help ............................... displays this help message";
+  say STDERR "$0 --force .............................. recreate files";
+  say STDERR "$0 --create-tarball <path> .............. create the pristine tarball for <path>";
+  say STDERR "$0 --init <target> ..................... Setup distro caches (run once)";
+  say STDERR "     where <target> := @{[ join '|', @TARGETS ]}";
+  say STDERR "$0 --init-all .......... Call --init for all targets in parallel";
+  say STDERR "$0 --build-source-package <path> ........ Build source package for <path>";
+  say STDERR "$0 --build-package <package.dsc> \\ ..... Build pacakge <package.dsc> for ";
+  say STDERR "   --target <target>                ..... <target>";
+  say STDERR "$0 --build-all .......................... Build all packages for all targets";
 
   exit -1;
 }
 
+sub cartesian_product {
+  my ($A, $B) = @_;
+  return [ map {
+      my $x = $_;
+      map [ $x, $_ ], $B->@*;
+  } $A->@* ];
+}
+
+sub test_cartesian_product {
+  is_deeply(cartesian_product([1,2], ['a', 'b']),
+    [[1, 'a'], [1, 'b'], [2, 'a'], [2, 'b']]);
+}
+      
 # grep_file {/PATTERN/} $file returns the first match groups in $file
 sub grep_file (&$%) {
   my ($block, $path, %opts) = @_;
@@ -96,31 +150,54 @@ sub contains {
   return 0;
 }
 
-sub init {
-  my $release = $opts{init};
-  croak "Invalid release $release" unless 
-    $release && contains($release, @RELEASES);
+sub test_contains {
+  is(contains(0, 9,9,9,9,0), 1);
+}
 
-  my $path = "~/.cache/sbuild/$release-amd64-sbuild.tar";
+sub init {
+  my $target = shift // $opts{init};
+  croak "Invalid target $target" unless 
+    $target && contains($target, @TARGETS);
+
+  my $cmdopts = "";
+  $cmdopts .= " --quiet" if !$opts{verbose};
+  $cmdopts .= " --verbose" if $opts{verbose};
+
+  my $basepath = "$ENV{HOME}/.cache/sbuild";
+  `mkdir -p $basepath`
+    unless -d $basepath;
+  my $path = "$basepath/$target-amd64-sbuild.tar.zst";
+
   return if -e $path && ! $opts{force};
   say "Initializing $path";
   sh(<<"EOF");
 mmdebstrap \\
+  $cmdopts \\
   --arch=amd64 \\
   --skip=output/mknod \\
   --components=main,universe \\
   --format=tar \\
-  $release \\
+  $target \\
   $path \\
-  http://archive.ubuntu.com/ubuntu
+  http://archive.ubuntu.com/ubuntu < /dev/null
+                                   # disables stdin
 EOF
 }
 
-# Receives a build target and a source directory
-# Find the most recent file in the source directory
-# and the target. If the target has newest modification
-# time we can skip the build, otherwise we must rebuild
-# as the source changed
+sub init_all {
+  my $pm = shift // Parallel::ForkManager->new($opts{nproc});
+  for my $target (@TARGETS) {
+    $pm->start and next;
+    init($target);
+    $pm->finish;
+  }
+
+  $pm->wait_all_children;
+}
+
+# Returns 1 if $source_dir changed
+# before $target. $target is expected to be a
+# file, not a directory
 sub source_changed {
   my ($target, $source_dir) = @_;
   my $result = `
@@ -133,7 +210,7 @@ sub source_changed {
 }
 
 sub create_tarball {
-  my ($path) = $opts{create_tarball};
+  my $path = shift // $opts{create_tarball};
   my ($name) = grep_file {/Source: (.*)/} "$path/debian/control";
   my ($version) =
     grep_file {/$name\s+\(([^\-]+)/} "$path/debian/changelog";
@@ -150,10 +227,99 @@ tar --exclude './debian' -czf $tarname  -C $path .
 EOF
 }
 
+sub build_source_package {
+  my $path = shift // $opts{build_source_package};
+
+  my ($name) = grep_file {/Source: (.*)/} "$path/debian/control";
+  my ($version) =
+    grep_file {/$name\s+\(([^)]+)/} "$path/debian/changelog";
+  my $pkgname = "${name}_${version}";
+
+  my @files = (
+    "$path/../$pkgname.dsc",
+    "$path/../$pkgname.debian.tar.xz",
+  );
+
+  my $all_files_exists = List::Util::all { -e } @files;
+
+  return if $all_files_exists && !$opts{force};
+
+  say "Building source package $pkgname";
+
+  sh("cd $path; dpkg-buildpackage -S -uc -us");
+}
+
+sub package_to_dsc {
+  my $path = shift // $opts{build_source_package};
+
+  my ($name) = grep_file {/Source: (.*)/} "$path/debian/control";
+  my ($version) =
+    grep_file {/$name\s+\(([^)]+)/} "$path/debian/changelog";
+  my $pkgname = "${name}_${version}";
+
+  return "$FindBin::Bin/$pkgname.dsc";
+}
+
+sub build_package {
+  my ($dsc, $target) = @_;
+  die "--build-package expect a single --target"
+    if !defined($target) && $opts{targets}->@* > 1;
+  $dsc //= $opts{build_package};
+  $target //= $opts{targets}->[0];
+
+  say "Building package $dsc for $target";
+
+  my $cmdopts = "";
+  $cmdopts .= " --verbose" if $opts{verbose};
+
+  sh(<<"EOF");
+sbuild -d $target $cmdopts --build-dir dist/ubuntu/$target/ $dsc 
+EOF
+}
+
+sub build_all {
+  my ($packages, $targets) = @_;
+  $packages //= $opts{packages};
+  $targets //= $opts{targets};
+
+  my $all = cartesian_product($packages, $targets);
+  my $pm = Parallel::ForkManager->new($opts{nproc});
+
+  for my $package ($packages->@*) {
+    $pm->start and next;
+    create_tarball($package);
+    build_source_package($package);
+    $pm->finish;
+  };
+  $pm->wait_all_children;
+
+  for my $pair ($all->@*) {
+    $pm->start and next;
+    my ($package, $target) = $pair->@*;
+    my $dsc = package_to_dsc($package);
+    build_package($dsc, $target);
+    $pm->finish;
+  };
+  $pm->wait_all_children;
+}
+
+sub test {
+  test_contains();
+  test_cartesian_product();
+  done_testing();
+}
 
 sub main {
+  return usage if $opts{help};
   return create_tarball if $opts{create_tarball};
+  return build_source_package if $opts{build_source_package};
+  return build_package if $opts{build_package};
   return init if $opts{init};
+  return init_all if $opts{init_all};
+  return test if $opts{test};
+  return build_all if $opts{build_all};
+  
+  usage();
 };
 
 
