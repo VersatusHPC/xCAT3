@@ -1,3 +1,7 @@
 # xCAT is traditionally installed to /opt
 perl-xcat: dir-or-file-in-opt
 perl-xcat: source-is-missing
+perl-xcat: unreleased-changes
+perl-xcat: unreleased-changes
+perl-xcat: unreleased-changes
+perl-xcat: unreleased-changes

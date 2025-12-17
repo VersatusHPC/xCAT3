@@ -12,3 +12,4 @@ xcat-server: missing-dep-for-interpreter
 xcat-server: postrm-does-not-call-updaterc.d-for-init.d-script etc/init.d/xcatd [postrm]
 xcat-server: python3-script-but-no-python3-dep
 xcat-server: shell-script-fails-syntax-check
+xcat-server: unreleased-changes

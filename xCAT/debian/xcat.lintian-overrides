@@ -7,3 +7,4 @@ xcat: maintainer-script-calls-init-script-directly
 xcat: missing-dep-for-interpreter
 xcat: non-standard-toplevel-dir
 xcat: shell-script-fails-syntax-check
+xcat: unreleased-changes

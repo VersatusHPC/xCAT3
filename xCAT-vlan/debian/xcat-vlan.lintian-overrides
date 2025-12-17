@@ -10,3 +10,4 @@ xcat-vlan: missing-dep-for-interpreter
 xcat-vlan: no-copyright-file
 xcat-vlan: non-standard-toplevel-dir
 xcat-vlan: root-in-contact
+xcat-vlan: unreleased-changes
