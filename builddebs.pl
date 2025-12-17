@@ -100,16 +100,23 @@ sub sh {
 
 sub usage {
   say STDERR "Usage:";
-  say STDERR "$0 --help ............................... displays this help message";
-  say STDERR "$0 --force .............................. recreate files";
-  say STDERR "$0 --create-tarball <path> .............. create the pristine tarball for <path>";
-  say STDERR "$0 --init <target> ..................... Setup distro caches (run once)";
+  say STDERR "$0 --help ............................... Displays this help message";
+  say STDERR "$0 --create-tarball <path> .............. Create the pristine tarball for <path>";
+  say STDERR "$0 --init <target> ...................... Setup distro caches (run once)";
   say STDERR "     where <target> := @{[ join '|', @TARGETS ]}";
-  say STDERR "$0 --init-all .......... Call --init for all targets in parallel";
+  say STDERR "$0 --init-all ........................... Call --init for all targets in parallel";
   say STDERR "$0 --build-source-package <path> ........ Build source package for <path>";
-  say STDERR "$0 --build-package <package.dsc> \\ ..... Build pacakge <package.dsc> for ";
-  say STDERR "   --target <target>                ..... <target>";
+  say STDERR "$0 --build-package <package.dsc> \\ ..... Build package <package.dsc> for ";
+  say STDERR "   --target <target> .................... <target>";
   say STDERR "$0 --build-all .......................... Build all packages for all targets";
+  say STDERR "";
+  say STDERR "Other options:";
+  say STDERR "";
+  say STDERR "   --nproc <N> .......................... The amount of cores to use as parallelism";
+  say STDERR "   --force .............................. Override previous builds in the disk";
+  say STDERR "   --verbose ............................ More output";
+  say STDERR "$0 --build-all --target T1 --target T2 \\ Build only for the targets and packages"
+  say STDERR "     --package P1 --package P2 .......... specified in the command line"
 
   exit -1;
 }
