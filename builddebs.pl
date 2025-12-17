@@ -246,7 +246,9 @@ sub build_source_package {
 
   say "Building source package $pkgname";
 
-  sh("cd $path; dpkg-buildpackage -S -uc -us");
+  create_tarball($path);
+
+  sh("cd $path; dh_clean; dpkg-buildpackage -S -uc -us");
 }
 
 sub package_to_dsc {
