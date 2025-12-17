@@ -274,6 +274,9 @@ sub build_package {
   my $cmdopts = "";
   $cmdopts .= " --verbose" if $opts{verbose};
 
+  `mkdir -p dist/ubuntu/$target`
+    unless -d "dist/ubuntu/$target"; 
+
   sh(<<"EOF");
 sbuild -d $target $cmdopts --build-dir dist/ubuntu/$target/ $dsc 
 EOF
