@@ -27,7 +27,7 @@ use Sh;
 }
 
 # run returns exit status
-is(Sh::run("echo 1"), 0);
+is(Sh::run("exit 0"), 0);
 is(Sh::run("exit 123"), 123);
 
 # output returns the output without trailing line breaks
@@ -69,6 +69,7 @@ dies_ok { Sh::output("exit -1"); };
     write_text($tmp_path, <<"EOF");
     foo: bar
     tar: zar
+    tick: tack toe
 EOF
 
     my $matches = Sh::grep_file(
@@ -80,6 +81,13 @@ EOF
             foo => "bar",
             tar => "zar"
         });
+
+    my ($tack, $toe) = Sh::grep_file(
+        $tmp_path,
+        qr/tick: (\w+) (\w+)/
+    );
+    is($tack, "tack");
+    is($toe, "toe");
 }
 
 done_testing;
