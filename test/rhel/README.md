@@ -76,7 +76,7 @@ nginx at each run.
 
 ## Preparing the Test Container
 ```bash
-test/scripts/setuptesthost.pl --setup_container --target <target> [--force]
+test/rhel/scripts/setuptesthost.pl --setup_container --target <target> [--force]
 ```
 
 - This builds a container image and creates a container named `xcattest-elX` (X is 8, 9 or 10 depending on the target).
@@ -98,5 +98,5 @@ podman exec -it xcattest-el10 scripts/testxcat.pl --all
 - Dependencies extracted to `../xcat-dep` for all EL versions you plan to build.
 - `buildrpms.pl` completes successfully for the target and produces a repository.
 - nginx listens on port 8080 and serves the generated repository.
-- `test/scripts/setuptesthost.pl --setupcontainer --target <target>` creates or updates the `xcattest-elX` container.
+- `test/rhel/scripts/setuptesthost.pl --setupcontainer --target <target>` creates or updates the `xcattest-elX` container.
 - `podman exec -it xcattest-elX scripts/testxcat.pl --all` runs to completion and verifies the xCAT stack inside the container.

@@ -76,14 +76,14 @@ sub setup_container {
     cleanupcontainerandimage($name, "$name-image")
         if $opts->{force};
 
-    sh("podman build -t $name-image --build-arg RELEASEVER=$releasever test/")
+    sh("podman build -t $name-image --build-arg RELEASEVER=$releasever test/rhel")
         unless imageexists("$name-image");
     my $script = <<"EOF";
 podman create --name $name \\
     --privileged    \\
     --systemd=true  \\
     --cap-add=ALL  \\
-    -v "$PWD/test/scripts:/workspace/scripts:Z" \\
+    -v "$PWD/test/rhel/scripts:/workspace/scripts:Z" \\
     -v /sys/fs/cgroup:/sys/fs/cgroup:ro  \\
     --tmpfs /tmp  \\
     --tmpfs /run \\
