@@ -10,15 +10,16 @@ use Data::Dumper qw(Dumper);
 use File::Basename qw(basename fileparse dirname);
 use File::Spec;
 use File::Path qw(make_path);
+use File::Temp qw(tempfile);
 use FindBin qw();
 use Getopt::Long qw(GetOptions);
 use Pod::Usage;
-use Test::More;
 use Time::HiRes qw(gettimeofday tv_interval);
 
 use lib "$FindBin::Bin/test/lib/";
 
 use Sh;
+use Utils qw(grep_file sed_file cartesian_product contains);
 
 
 my @DEPS = qw(
@@ -35,10 +36,10 @@ eval {
     require List::Util;
     List::Utils->import();
     require File::Slurper;
-    File::Slurper->import('read_text');
+    File::Slurper->import(qw(read_text write_text));
     1;
 } or die(<<"EOF");
-Error while loading dependencies, run
+Error while loading dependencies: $!, run
 
     apt install -y @{[ join " ", @DEPS ]}
 
@@ -78,13 +79,16 @@ my %opts = (
     force => 0,
     init_all => 0,
     init => "",
+    init_nginx => 0,
+    init_reprerpo => 0,
     nproc => int(`nproc --all`),
-    test => 0,
     output => "$FindBin::Bin/dist",
     kill_timeout => 30,
     keep_going => 0,
     build_num => 1,
-    repos_path => "/var/www/repos/ubuntu",
+    repos_path => "/var/www/html/repos/ubuntu",
+    create_repos => 0,
+    nginx_port => 8080,
 );
 
 GetOptions(
@@ -95,52 +99,42 @@ GetOptions(
     "build-source-package=s" => \$opts{build_source_package},
     "build-package=s" => \$opts{build_package},
     "build-all" => \$opts{build_all},
+    "create-repos" => \$opts{create_repos},
     "target=s@" => \$opts{targets},
     "package=s@" => \$opts{packages},
     "init=s" => \$opts{init},
     "init-all" => \$opts{init_all},
-    "test" => \$opts{test},
+    "init-nginx" => \$opts{init_nginx},
+    "init-reprepro" => \$opts{init_reprepro},
     "nproc=i" => \$opts{nproc},
     "output=s" => \$opts{output},
     "kill-timeout=i" => \$opts{kill_timeout},
     "keep-going" => \$opts{keep_going},
     "build-num=i" => \$opts{build_num},
     "repos-path=s" => \$opts{repos_path},
+    "nginx-port=i" => \$opts{nginx_port},
 ) or pod2usage(2);
 
+exit(main());
 
-main();
+sub script_opts {
+    my (%func_opts) = @_;
 
-sub cartesian_product {
-    my ($A, $B) = @_;
-    return [ map {
-            my $x = $_;
-            map [ $x, $_ ], $B->@*;
-    } $A->@* ];
-}
-
-sub test_cartesian_product {
-    is_deeply(cartesian_product([1,2], ['a', 'b']),
-        [[1, 'a'], [1, 'b'], [2, 'a'], [2, 'b']]);
-}
-            
-sub contains {
-    my $needle = shift;
-    for (@_) {
-        return 1 if $needle eq $_;
+    my $script_opts;
+    if ($opts{verbose}) {
+        $script_opts .= "set -x"
+    } else {
+        $script_opts .= "exec > /dev/null; ";
+        $script_opts .= "exec 2> /dev/null; "
+            if $func_opts{-disable_stderr};
     }
-
-    return 0;
-}
-
-sub test_contains {
-    is(contains(0, 9,9,9,9,0), 1);
+    return $script_opts;
 }
 
 sub init {
     my $target = shift // $opts{init};
     croak "Invalid target $target" unless 
-        $target && contains($target, @TARGETS);
+        $target && contains($target, \@TARGETS);
 
     my $cmdopts = "";
     $cmdopts .= " --quiet" if !$opts{verbose};
@@ -168,9 +162,61 @@ mmdebstrap \\
     # disables stdin
 EOF
 }
+sub init_reprepro {
+    my ($repos_path) = @_;
+    $repos_path //= $opts{repos_path};
+    make_path("$repos_path/conf/");
+    return -1 unless -d "$repos_path/conf/";
+    my $template = <<"EOF";
+Origin: xCAT3 - Ubuntu 26.04
+Label: Stable Repository
+Suite: xcat/test
+Codename: resolute
+Architectures: amd64
+Components: main universe
+Description: Stable Repository
+
+Origin: xCAT3 - Ubuntu 24.04
+Label: Stable Repository
+Suite: xcat/test
+Codename: noble
+Architectures: amd64
+Components: main universe
+Description: Stable Repository
+
+Origin: xCAT3 - Ubuntu 22.04
+Label: Stable Repository
+Suite: xcat/test
+Codename: jammy
+Architectures: amd64
+Components: main universe
+Description: Stable Repositor
+EOF
+    write_text("$repos_path/conf/distributions", $template);
+    return 0;
+}
+
+sub init_nginx {
+    my ($port) = @_;
+    $port //= $opts{nginx_port};
+    sed_file 
+        {s/listen \d+ default_server;/listen $port default_server;/}
+        "/etc/nginx/sites-enabled/default";
+    sed_file 
+        {s/listen \[::\]:\d+ default_server;/listen \[::\]:$port default_server;/}
+        "/etc/nginx/sites-enabled/default";
+    return Sh::run(<<"EOF");
+@{[ script_opts ]}
+systemctl restart nginx
+EOF
+}
 
 sub init_all {
     my $pm = shift // Parallel::ForkManager->new($opts{nproc});
+
+    init_nginx or return -1;
+    init_reprepro or return -2;
+
     my $exit_code = 0;
     $pm->run_on_finish(sub {
         my ($pid, $exit, $name) = @_;
@@ -186,6 +232,7 @@ sub init_all {
     }
 
     $pm->wait_all_children;
+
 
     return $exit_code;
 }
@@ -206,9 +253,9 @@ sub source_changed {
 
 sub create_tarball {
     my $path = shift // $opts{create_tarball};
-    my ($name) = Sh::grep_file "$path/debian/control", qr/Source: (.*)/;
+    my ($name) = grep_file "$path/debian/control", qr/Source: (.*)/;
     my ($version) =
-        Sh::grep_file "$path/debian/changelog", qr/$name\s+\(([^\-]+)/;
+        grep_file "$path/debian/changelog", qr/$name\s+\(([^\-]+)/;
 
     my $tarname = "$FindBin::Bin/${name}_$version.orig.tar.gz";
     return if !$opts{force} && -e $tarname && !source_changed($tarname, $path);
@@ -237,12 +284,8 @@ sub build_source_package {
     my $targets = $opts{targets};
 
     for my $target ($targets->@*) {
-        my ($name) = Sh::grep_file "$path/debian/control", qr/Source: (.*)/;
-        my $script_opts;
-        $script_opts .= "exec > /dev/null 2>&1; "
-            unless $opts{verbose};
-        $script_opts .= "set -x"
-            if $opts{verbose};
+        my ($name) = grep_file "$path/debian/control", qr/Source: (.*)/;
+        my $script_opts = script_opts(-disable_stderr => 1);
 
         `cp $path/debian/changelog $path/debian/changelog.orig`
             unless -f "debian/changelog.orig";
@@ -295,7 +338,7 @@ sub package_to_dsc {
     my $path = shift // $opts{build_source_package};
     my $target = shift;
 
-    my ($name) = Sh::grep_file "$path/debian/control", qr/Source: (.*)/;
+    my ($name) = grep_file "$path/debian/control", qr/Source: (.*)/;
     my ($version) = fmt_version($target);
     my $pkgname = "${name}_${version}";
 
@@ -323,11 +366,6 @@ sub build_package {
 
     my $cmdopts = "";
     $cmdopts .= " --verbose" if $opts{verbose};
-    my $script_opts = "";
-    $script_opts .= "exec > /dev/null; "
-        unless $opts{verbose};
-    $script_opts .= "set -x; "
-        if $opts{verbose};
 
     my $builddir = dirname($path);
 
@@ -337,7 +375,7 @@ sub build_package {
     }
 
     my $exit = Sh::run(<<"EOF");
-$script_opts
+@{[ script_opts ]}
 
 sbuild -d $target $cmdopts --build-dir '$builddir' '$dsc'
 EOF
@@ -390,27 +428,34 @@ sub setup_reprepro {
 }
 
 sub create_repos {
-    my ($target, $out_path) = @_;
+    my ($targets, $out_path) = @_;
+    $targets //= $opts{targets};
     $out_path //= $opts{repos_path};
-    my $src_path = "$opts{output}/ubuntu/$target";
 
-    say "Building repository $target at $out_path";
-
-    my $script_opts;
-    $script_opts .= "exec > /dev/null; "
-        unless $opts{verbose};
-    $script_opts .= "set -x"
-        if $opts{verbose};
-    my $exit = Sh::run(<<"EOF");
-$script_opts
+    my $exit = 0;
+    for my $target ($targets->@*) {
+        say "Building repository $target at $out_path";
+        my $src_path = "$opts{output}/ubuntu/$target";
+        my $exit_tmp = Sh::run(<<"EOF");
+@{[ script_opts ]}
 cd $out_path
-reppro includedeb $target $src_path/*.deb
+reprepro removematched $target '*'
+reprepro includedeb $target $src_path/*.deb
 EOF
-
+        if ($exit_tmp != 0) { 
+            say STDERR "Building repository failed with status $exit_tmp";
+            exit($exit_tmp) if !$opts{keep_going};
+            $exit = $exit_tmp
+                unless $exit;
+        }
+    }
     return $exit;
 }
 
+
 sub build_all {
+    say "Build dir: ", Cwd::cwd();
+
     my ($packages, $targets) = @_;
     $packages //= $opts{packages};
     $targets //= $opts{targets};
@@ -509,31 +554,26 @@ sub build_all {
     $pm->wait_all_children;
 
     # Create repositories serially to make reprepro life easier
-    my @exit = map \&create_repos, $targets->@*;
-
+    my $exit = create_repos($targets);
     print_summary(\%summary, \%times);
-    exit(List::Util::max(@exit));
-}
-
-sub test {
-    test_contains();
-    test_cartesian_product();
-    done_testing();
+    return $exit;
 }
 
 sub main {
     return pod2usage(1) if $opts{help};
 
-    say "Build dir: ", Cwd::cwd();
     return create_tarball if $opts{create_tarball};
     return build_source_package if $opts{build_source_package};
     return build_package if $opts{build_package};
+    return create_repos if $opts{create_repos};
     return init if $opts{init};
     return init_all if $opts{init_all};
-    return test if $opts{test};
+    return init_nginx if $opts{init_nginx};
+    return init_reprepro if $opts{init_reprepro};
     return build_all if $opts{build_all};
 
     pod2usage(2);
+    return -1;
 };
 
 
@@ -635,10 +675,6 @@ Initialize and cache (mmdebstrap) an sbuild environment for the given Ubuntu rel
 =item B<--init-all>
 
 Initialize sbuild environments for all supported targets in parallel.
-
-=item B<--test>
-
-Run internal self-tests.
 
 =item B<--help>
 

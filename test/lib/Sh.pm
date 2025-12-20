@@ -157,48 +157,4 @@ sub ok {
     }
     return;
 }
-
-=head3 grep_file($path, $regex1, $regex2, ...)
-
-    scalar context: Returns a hashref with all named matches accumulated.
-    list context: Return the first group match
-
-    Example: 
-
-    # Returning a hash with all the matches
-    my $mem = grep_file(
-        "/proc/meminfo", 
-        qr/MemTotal: (?<total>\d+)/
-        qr/MemFree: (?<free>\d+)/);
-
-    print "memory free % ", $mem->{free} / $mem->{total}, "\n";
-
-    # Returning the first match as a group
-    my ($cache_size) = grep_file("/proc/cpuinfo", 
-        qr/cache_size\s+:\s+(\d+)/);
-=cut
-sub grep_file {
-    my ($path, @regexps) = @_;
-
-    open my $fh, "<", $path
-        or croak "open $path failed: $!";
-
-    my %out;
-    for my $line (<$fh>) {
-        for my $regexp (@regexps) {
-            if (wantarray) {
-                my @found = $line =~ $regexp;
-                return @found if @found;
-            } else {
-                if (my $match = $line =~ $regexp) {
-                    # accumulate the named matches in out
-                    %out = (%out, %+);
-                }
-            }
-        }
-    }
-
-    return wantarray ? () : \%out;
-}
-
 1;

@@ -63,31 +63,4 @@ dies_ok { Sh::output("exit -1"); };
     ok(! kill 0, $pid); # $pid is not running anymore
 }
 
-# grep_file test
-{
-    my ($tmp_fh, $tmp_path) = tempfile();
-    write_text($tmp_path, <<"EOF");
-    foo: bar
-    tar: zar
-    tick: tack toe
-EOF
-
-    my $matches = Sh::grep_file(
-        $tmp_path,
-        qr/foo: (?<foo>\w+)/,
-        qr/tar: (?<tar>\w+)/);
-
-    is_deeply($matches, {
-            foo => "bar",
-            tar => "zar"
-        });
-
-    my ($tack, $toe) = Sh::grep_file(
-        $tmp_path,
-        qr/tick: (\w+) (\w+)/
-    );
-    is($tack, "tack");
-    is($toe, "toe");
-}
-
 done_testing;
