@@ -238,10 +238,17 @@ sub init_all {
 }
 
 # Returns 1 if $source_dir changed
-# before $target. $target is expected to be a
+# after $target. $target is expected to be a
 # file, not a directory
 sub source_changed {
     my ($target, $source_dir) = @_;
+    croak "source_changed: invalid arguments $target, $source_dir"
+        unless -f $target && -d $source_dir;
+
+    # print <timestamp> <file> list
+    # sort by <timestamp> descending
+    # return the first <file> in the list
+    # resolve its path
     my $result = `
         find $target $source_dir \\
             -type f -printf '%T@ %p\n' \\
@@ -249,6 +256,11 @@ sub source_changed {
             awk '{print \$2}' | xargs realpath`;
     chomp $result;
     return $result ne $target;
+}
+
+sub fmt_version {
+    my ($target) = @_;
+    return "$VERSION~$target~$RELEASE-$opts{build_num}"
 }
 
 sub create_tarball {
@@ -271,11 +283,6 @@ EOF
     
     -e $tarname or return -1;
     return 0;
-}
-
-sub fmt_version {
-    my ($target) = @_;
-    return "$VERSION~$target~$RELEASE-$opts{build_num}"
 }
 
 sub build_source_package {
@@ -575,8 +582,6 @@ sub main {
     pod2usage(2);
     return -1;
 };
-
-
 
 __END__
 
