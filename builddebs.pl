@@ -20,18 +20,22 @@ use lib "$FindBin::Bin/test/lib/";
 
 use Sh;
 
+
 my @DEPS = qw(
     libparallel-forkmanager-perl
     libscalar-list-utils-perl
+    libfile-slurper-perl
     apt-cacher-ng
 );
 
 eval {
     my $dep = "";
     require Parallel::ForkManager;
-    require List::Util;
     Parallel::ForkManager->import();
+    require List::Util;
     List::Utils->import();
+    require File::Slurper;
+    File::Slurper->import('read_text');
     1;
 } or die(<<"EOF");
 Error while loading dependencies, run
@@ -41,6 +45,9 @@ Error while loading dependencies, run
 and try again.
 EOF
 
+my $VERSION = read_text("Version");
+my $RELEASE = lc read_text("Release");
+chomp $VERSION; chomp $RELEASE;
 
 my @PACKAGES = qw(
     perl-xCAT
@@ -76,6 +83,8 @@ my %opts = (
     output => "$FindBin::Bin/dist",
     kill_timeout => 30,
     keep_going => 0,
+    build_num => 1,
+   
 );
 
 GetOptions(
@@ -95,6 +104,7 @@ GetOptions(
     "output=s" => \$opts{output},
     "kill-timeout=i" => \$opts{kill_timeout},
     "keep-going" => \$opts{keep_going},
+    "build-num" => \$opts{build_num},
 ) or pod2usage(2);
 
 
@@ -215,44 +225,61 @@ EOF
     return 0;
 }
 
+sub fmt_version {
+    my ($target) = @_;
+    return "$VERSION~$target~$RELEASE-$opts{build_num}"
+}
+
 sub build_source_package {
     my $path = shift // $opts{build_source_package};
 
-    my ($name) = Sh::grep_file "$path/debian/control", qr/Source: (.*)/;
-    my ($version) =
-        Sh::grep_file "$path/debian/changelog", qr/$name\s+\(([^)]+)/;
-    my $pkgname = "${name}_${version}";
+    my $targets = $opts{targets};
 
-    my @files = (
-        "$path/../$pkgname.dsc",
-        "$path/../$pkgname.debian.tar.xz",
-    );
+    for my $target ($targets->@*) {
+        my ($name) = Sh::grep_file "$path/debian/control", qr/Source: (.*)/;
+        my $script_opts;
+        $script_opts .= "exec > /dev/null 2>&1; "
+            unless $opts{verbose};
+        $script_opts .= "set -x"
+            if $opts{verbose};
 
-    my $all_files_exists = List::Util::all { -e } @files;
 
-    return if $all_files_exists && !$opts{force};
+        my $exit = Sh::run(<<"EOF");
+$script_opts
+cd $path
+git checkout debian/changelog
+dch -D $target -v "$VERSION~$target~$RELEASE-$opts{build_num}" "Rebuild for Ubuntu ($target)"
+EOF
+        return $exit unless $exit == 0;
 
-    my $fpath = File::Spec->abs2rel("$FindBin::Bin/$pkgname.dsc");
+        my $version = fmt_version($target);
+        my $pkgname = "${name}_${version}";
 
-    say "Building $fpath";
+        my @files = (
+            "$path/../$pkgname.dsc",
+            "$path/../$pkgname.debian.tar.xz",
+        );
 
-    create_tarball($path);
+        my $all_files_exists = List::Util::all { -e } @files;
 
-    my $script_opts;
-    $script_opts .= "exec > /dev/null 2>&1; "
-        unless $opts{verbose};
-    $script_opts .= "set -x"
-        if $opts{verbose};
+        next if $all_files_exists && !$opts{force};
 
-    my $exit = Sh::run(<<"EOF");
+        my $fpath = File::Spec->abs2rel("$FindBin::Bin/$pkgname.dsc");
+
+        say "Building $fpath";
+
+        create_tarball($path);
+
+        $exit = Sh::run(<<"EOF");
 $script_opts
 cd $path; dh_clean; dpkg-buildpackage -S -uc -us
 EOF
-    return $exit unless $exit == 0;
+        return $exit unless $exit == 0;
 
-    if (!-e $fpath) {
-        say STDERR "Build $fpath finished but no file was created, aborting ...";
-        return -1;
+        if (!-e $fpath) {
+            say STDERR "Build $fpath finished but no file was created, aborting ...";
+            return -1;
+        }
     }
 
     return 0;
@@ -260,10 +287,10 @@ EOF
 
 sub package_to_dsc {
     my $path = shift // $opts{build_source_package};
+    my $target = shift;
 
     my ($name) = Sh::grep_file "$path/debian/control", qr/Source: (.*)/;
-    my ($version) =
-        Sh::grep_file "$path/debian/changelog", qr/$name\s+\(([^)]+)/;
+    my ($version) = fmt_version($target);
     my $pkgname = "${name}_${version}";
 
     return "$FindBin::Bin/$pkgname.dsc";
@@ -438,7 +465,7 @@ sub build_all {
 
     for my $pair ($all->@*) {
         my ($package, $target) = $pair->@*;
-        my $dsc = package_to_dsc($package);
+        my $dsc = package_to_dsc($package, $target);
         $pm->start(lc $package . ":$target") and next;
         $SIG{'TERM'} = 'DEFAULT';
         $pm->finish(build_package($dsc, $target));
