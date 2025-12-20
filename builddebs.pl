@@ -84,7 +84,7 @@ my %opts = (
     kill_timeout => 30,
     keep_going => 0,
     build_num => 1,
-   
+    repos_path => "/var/www/repos/ubuntu",
 );
 
 GetOptions(
@@ -104,7 +104,8 @@ GetOptions(
     "output=s" => \$opts{output},
     "kill-timeout=i" => \$opts{kill_timeout},
     "keep-going" => \$opts{keep_going},
-    "build-num" => \$opts{build_num},
+    "build-num=i" => \$opts{build_num},
+    "repos-path=s" => \$opts{repos_path},
 ) or pod2usage(2);
 
 
@@ -243,12 +244,17 @@ sub build_source_package {
         $script_opts .= "set -x"
             if $opts{verbose};
 
+        `cp $path/debian/changelog $path/debian/changelog.orig`
+            unless -f "debian/changelog.orig";
 
         my $exit = Sh::run(<<"EOF");
 $script_opts
 cd $path
-git checkout debian/changelog
-dch -D $target -v "$VERSION~$target~$RELEASE-$opts{build_num}" "Rebuild for Ubuntu ($target)"
+cp debian/changelog.orig debian/changelog
+rm debian/changelog.dch 2> /dev/null || :
+dch -D $target -b -v "$VERSION~$target~$RELEASE-$opts{build_num}" "Rebuild for Ubuntu ($target)
+"
+
 EOF
         return $exit unless $exit == 0;
 
@@ -333,7 +339,7 @@ sub build_package {
     my $exit = Sh::run(<<"EOF");
 $script_opts
 
-sbuild -d $target $cmdopts --build-dir $builddir $dsc 
+sbuild -d $target $cmdopts --build-dir '$builddir' '$dsc'
 EOF
 
     return $exit
@@ -379,10 +385,40 @@ sub create_target_directories {
     return List::Util::all { -d  } @paths;
 }
 
+sub setup_reprepro {
+    die "TODO";
+}
+
+sub create_repos {
+    my ($target, $out_path) = @_;
+    $out_path //= $opts{repos_path};
+    my $src_path = "$opts{output}/ubuntu/$target";
+
+    say "Building repository $target at $out_path";
+
+    my $script_opts;
+    $script_opts .= "exec > /dev/null; "
+        unless $opts{verbose};
+    $script_opts .= "set -x"
+        if $opts{verbose};
+    my $exit = Sh::run(<<"EOF");
+$script_opts
+cd $out_path
+reppro includedeb $target $src_path/*.deb
+EOF
+
+    return $exit;
+}
+
 sub build_all {
     my ($packages, $targets) = @_;
     $packages //= $opts{packages};
     $targets //= $opts{targets};
+
+    for my $pkg ($packages->@*) {
+        die("Invalid package $pkg, expect one of: ", join ", ", @PACKAGES)
+            unless List::Util::any { $pkg eq $_ } @PACKAGES;
+    }
 
     create_target_directories($targets->@*)
         or die("ERROR Creating directories");
@@ -472,7 +508,11 @@ sub build_all {
     };
     $pm->wait_all_children;
 
+    # Create repositories serially to make reprepro life easier
+    my @exit = map \&create_repos, $targets->@*;
+
     print_summary(\%summary, \%times);
+    exit(List::Util::max(@exit));
 }
 
 sub test {
