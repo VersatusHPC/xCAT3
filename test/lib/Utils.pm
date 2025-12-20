@@ -16,6 +16,25 @@ our @EXPORT_OK = qw(
     contains
 );
 
+=head1 NAME
+
+Utils - Small utility functions used during building and testing
+
+=head1 SYNOPSIS
+
+  This module provides simple utility functions that are used
+  during building and testing. Since we build for Ubuntu and
+  RHEL, there are some common code shared between both build
+  scripts
+
+=head1 FUNCTIONS
+=cut
+
+=head3 cartesian_product(\@A, \@B)
+
+    Returns the cartesian product of @A and @B
+
+=cut
 sub cartesian_product {
     my ($A, $B) = @_;
     return [ map {
@@ -24,6 +43,16 @@ sub cartesian_product {
     } $A->@* ];
 }
 
+=head3 sed_file BLOCK $PATH
+
+    Apply the BLOCK to each line of file PATH
+
+    The BLOCK should read & update the value of $_
+
+    Example:
+        sed_file {s/foo/bar/} "myfile.txt";
+
+=cut
 sub sed_file(&$) { 
     my ($block, $file) = @_;
     my @lines;
@@ -40,6 +69,12 @@ sub sed_file(&$) {
     return 0;
 }
 
+
+=head3 contains $NEEDLE, \@HAYSTACK
+
+    Returns 1 if $NEEDLE occurs in \@HAYSTACK, 0 otherwise
+
+=cut
 sub contains {
     my $needle = shift;
     my $haystack_ref = shift;
@@ -47,6 +82,7 @@ sub contains {
 }
 
 =head3 grep_file($path, $regex1, $regex2, ...)
+
     scalar context: Returns a hashref with all named matches accumulated.
     list context: Return the first group match
 
@@ -63,6 +99,7 @@ sub contains {
     # Returning the first match as a group
     my ($cache_size) = grep_file("/proc/cpuinfo", 
         qr/cache_size\s+:\s+(\d+)/);
+
 =cut
 sub grep_file {
     my ($path, @regexps) = @_;

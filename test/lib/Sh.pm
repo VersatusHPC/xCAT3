@@ -20,7 +20,7 @@ our @EXPORT_OK = qw(
 
 =head1 NAME
 
-Utils - Utilities functions during building and testing
+Sh - Shell utilitiy functions used during building and testing
 
 =head1 SYNOPSIS
 
