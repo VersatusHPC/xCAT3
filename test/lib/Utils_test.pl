@@ -12,7 +12,7 @@ use Data::Dumper qw(Dumper);
 
 use lib "$Bin";
 
-use Utils qw(sed_file grep_file cartesian_product contains);
+use Utils qw(sed_file grep_file cartesian_product is_in);
 
 sub test_sed_file {
     # UNLINK => 1: remove the file during exit (not at close)
@@ -67,13 +67,13 @@ sub test_cartesian_product {
         [[1, 'a'], [1, 'b'], [2, 'a'], [2, 'b']]);
 }
 
-sub test_contains {
-    is(contains(0, [9,9,9,9,0]), 1);
+sub test_is_in {
+    is(is_in(0, [9,9,9,9,0]), 1);
 }
 
-# test_sed_file;
-# test_grep_file;
-# test_cartesian_product;
-test_contains;
+test_sed_file;
+test_grep_file;
+test_cartesian_product;
+test_is_in;
 done_testing;
 

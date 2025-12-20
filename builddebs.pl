@@ -19,7 +19,7 @@ use Time::HiRes qw(gettimeofday tv_interval);
 use lib "$FindBin::Bin/test/lib/";
 
 use Sh;
-use Utils qw(grep_file sed_file cartesian_product contains);
+use Utils qw(grep_file sed_file cartesian_product is_in);
 
 
 my @DEPS = qw(
@@ -131,10 +131,23 @@ sub script_opts {
     return $script_opts;
 }
 
+sub validate_targets {
+    for (@_) {
+        die "Invalid target: $_, expect one of: ", join ", ", @TARGETS
+            unless (defined($_) && is_in($_, \@TARGETS));
+    }
+}
+
+sub validate_packages {
+    for (@_) {
+        die "Invalid package: $_, expect one of: ", join ", ", @PACKAGES
+            unless (defined($_) && is_in($_, \@TARGETS));
+    }
+}
+
 sub init {
     my $target = shift // $opts{init};
-    croak "Invalid target $target" unless 
-        $target && contains($target, \@TARGETS);
+    validate_targets($target);
 
     my $cmdopts = "";
     $cmdopts .= " --quiet" if !$opts{verbose};
@@ -466,6 +479,9 @@ sub build_all {
     my ($packages, $targets) = @_;
     $packages //= $opts{packages};
     $targets //= $opts{targets};
+
+    validate_targets($targets->@*);
+    validate_packages($packages->@*);
 
     for my $pkg ($packages->@*) {
         die("Invalid package $pkg, expect one of: ", join ", ", @PACKAGES)

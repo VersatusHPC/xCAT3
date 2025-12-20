@@ -13,7 +13,7 @@ our @EXPORT_OK = qw(
     cartesian_product
     sed_file
     grep_file
-    contains
+    is_in
 );
 
 =head1 NAME
@@ -70,16 +70,17 @@ sub sed_file(&$) {
 }
 
 
-=head3 contains $NEEDLE, \@HAYSTACK
+=head3 is_in $NEEDLE, \@HAYSTACK
 
     Returns 1 if $NEEDLE occurs in \@HAYSTACK, 0 otherwise
 
 =cut
-sub contains {
+sub is_in {
     my $needle = shift;
     my $haystack_ref = shift;
     return defined(first { $needle == $_ } $haystack_ref->@*);
 }
+
 
 =head3 grep_file($path, $regex1, $regex2, ...)
 
