@@ -58,6 +58,7 @@ my @PACKAGES = qw(
     xCAT-server
     xCAT-vlan
     xCAT-test
+    xCAT-genesis-scripts
 );
 # xCAT-genesis-scripts
 
