@@ -11,12 +11,12 @@ use File::Basename qw(basename fileparse dirname);
 use File::Spec;
 use File::Path qw(make_path);
 use File::Temp qw(tempfile);
-use FindBin qw();
+use FindBin qw($Bin);
 use Getopt::Long qw(GetOptions);
 use Pod::Usage;
 use Time::HiRes qw(gettimeofday tv_interval);
 
-use lib "$FindBin::Bin/test/lib/";
+use lib "$Bin/test/lib/";
 
 use Sh;
 use Utils qw(grep_file sed_file cartesian_product is_in);
@@ -46,8 +46,8 @@ Error while loading dependencies: $!, run
 and try again.
 EOF
 
-my $VERSION = read_text("Version");
-my $RELEASE = lc read_text("Release");
+my $VERSION = read_text("$Bin/Version");
+my $RELEASE = lc read_text("$Bin/Release");
 chomp $VERSION; chomp $RELEASE;
 
 my @PACKAGES = qw(
@@ -82,13 +82,14 @@ my %opts = (
     init_nginx => 0,
     init_reprerpo => 0,
     nproc => int(`nproc --all`),
-    output => "$FindBin::Bin/dist",
+    output => "$Bin/dist",
     kill_timeout => 30,
     keep_going => 0,
     build_num => 1,
-    repos_path => "/var/www/html/repos/ubuntu",
+    repos_path => "/var/www/html/repos/xcat-core",
     create_repos => 0,
     nginx_port => 8080,
+    xcat_dep_mirror => "https://mirror.versatushpc.com.br/xcat/apt/xcat-dep"
 );
 
 GetOptions(
@@ -212,12 +213,43 @@ EOF
 sub init_nginx {
     my ($port) = @_;
     $port //= $opts{nginx_port};
-    sed_file 
-        {s/listen \d+ default_server;/listen $port default_server;/}
-        "/etc/nginx/sites-enabled/default";
-    sed_file 
-        {s/listen \[::\]:\d+ default_server;/listen \[::\]:$port default_server;/}
-        "/etc/nginx/sites-enabled/default";
+
+    make_path($opts{repos_path});
+    my ($mirror_url, $mirror_path) = split '/', $opts{xcat_dep_mirror}, 2;
+    $mirror_path =~ s|/$||;
+
+    write_text("/etc/nginx/conf.d/local-repos.conf", <<"EOF");
+proxy_cache_path /var/cache/nginx/apt/xcat-dep
+    levels=1:2
+    keys_zone=xcatdep_cache:100m
+    max_size=20g
+    inactive=30d
+    use_temp_path=off;
+
+server {
+    listen $port;
+    listen [::]:$port;
+    root /var/www/html/;
+
+    location /repos/xcat-dep/ {
+      	proxy_pass $mirror_url/$mirror_path/;
+        proxy_cache xcatdep_cache;
+        proxy_cache_valid 200 301 302 30d;
+        proxy_cache_lock on;
+        proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
+        proxy_set_header Host $mirror_url;
+        proxy_ignore_headers Cache-Control Expires;
+        add_header X-Cache \$upstream_cache_status;
+    }
+
+    location /repos/xcat-core/ {
+        autoindex on;
+        index off;
+        allow all;
+    }
+}
+EOF
+
     return Sh::run(<<"EOF");
 @{[ script_opts ]}
 systemctl restart nginx
@@ -282,14 +314,16 @@ sub create_tarball {
     my ($version) =
         grep_file "$path/debian/changelog", qr/$name\s+\(([^\-]+)/;
 
-    my $tarname = "$FindBin::Bin/${name}_$version.orig.tar.gz";
+    my $tarname = "$Bin/${name}_$version.orig.tar.gz";
     return if !$opts{force} && -e $tarname && !source_changed($tarname, $path);
 
     say "Building ", File::Spec->abs2rel($tarname);
 
     my $exit = Sh::run(<<"EOF");
-git log -n1 --pretty=%h > $FindBin::Bin/Gitinfo
-cp $FindBin::Bin/Gitinfo $path/
+git log -n1 --pretty=%h > $Bin/Gitinfo
+cp $Bin/Gitinfo $path/
+cp $Bin/Release $path/
+cp $Bin/Version $path/
 tar --exclude './debian' -czf $tarname    -C $path .
 EOF
     return $exit unless $exit == 0;
@@ -333,7 +367,7 @@ EOF
 
         next if $all_files_exists && !$opts{force};
 
-        my $fpath = File::Spec->abs2rel("$FindBin::Bin/$pkgname.dsc");
+        my $fpath = File::Spec->abs2rel("$Bin/$pkgname.dsc");
 
         say "Building $fpath";
 
@@ -362,7 +396,7 @@ sub package_to_dsc {
     my ($version) = fmt_version($target);
     my $pkgname = "${name}_${version}";
 
-    return "$FindBin::Bin/$pkgname.dsc";
+    return "$Bin/$pkgname.dsc";
 }
 
 sub build_package {
@@ -371,6 +405,9 @@ sub build_package {
         if !defined($target) && $opts{targets}->@* > 1;
     $dsc //= $opts{build_package};
     $target //= $opts{targets}->[0];
+
+    die "Invalid argument expected '$dsc' to be a .dsc file"
+        unless $dsc =~ /\.dsc$/ && -f $dsc;
 
     my ($name) = fileparse($dsc, ".dsc");
     my $arch = $name =~ /^(?:xcat|xcatsn)_/
