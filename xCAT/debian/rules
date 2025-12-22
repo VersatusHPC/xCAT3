@@ -67,6 +67,13 @@ binary-arch:
 	dh_makeshlibs
 	dh_installdeb
 	dh_shlibdeps
+	echo -n > debian/xcat.substvars
+	echo "xcat:version=$(shell cat Version)" >> debian/xcat.substvars
+	echo "xcat:release=$(shell cat Release | perl -lane 'print lc')" >> debian/xcat.substvars
+	echo "xcat:gitinfo=$(shell cat Gitinfo)" >> debian/xcat.substvars
+	echo "xcat:target=$(shell dpkg-parsechangelog -SDistribution)" >> debian/xcat.substvars
+	echo "Debian xcat.substvars"
+	cat debian/xcat.substvars
 	dh_gencontrol
 	dh_md5sums
 	dh_builddeb
