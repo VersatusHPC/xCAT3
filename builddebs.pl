@@ -74,6 +74,7 @@ my %opts = (
     build_source_package => "",
     build_package => "",
     build_all => 0,
+    check_files => 0,
     targets => \@TARGETS,
     packages => \@PACKAGES,
     verbose => 0,
@@ -98,6 +99,7 @@ GetOptions(
     "force" => \$opts{force},
     "verbose" => \$opts{verbose},
     "create-tarball=s" => \$opts{create_tarball},
+    "check-files" => \$opts{check_files},
     "build-source-package=s" => \$opts{build_source_package},
     "build-package=s" => \$opts{build_package},
     "build-all" => \$opts{build_all},
@@ -319,6 +321,7 @@ sub create_tarball {
     return if !$opts{force} && -e $tarname && !source_changed($tarname, $path);
 
     say "Building ", File::Spec->abs2rel($tarname);
+    return -1 if $opts{check_files};
 
     my $exit = Sh::run(<<"EOF");
 git log -n1 --pretty=%h > $Bin/Gitinfo
@@ -338,6 +341,12 @@ sub build_source_package {
 
     my $targets = $opts{targets};
 
+    unless ($ENV{DEBEMAIL} || $ENV{EMAIL}) {
+        say STDERR "You need to export DEBEMAIL or EMAIL environment variables ",
+            "before building the source package";
+        exit(-1);
+    }
+
     for my $target ($targets->@*) {
         my ($name) = grep_file "$path/debian/control", qr/Source: (.*)/;
         my $script_opts = script_opts(-disable_stderr => 1);
@@ -350,9 +359,10 @@ $script_opts
 cd $path
 cp debian/changelog.orig debian/changelog
 rm debian/changelog.dch 2> /dev/null || :
-dch -D $target -b -v "$VERSION~$target~$RELEASE-$opts{build_num}" "Rebuild for Ubuntu ($target)
-"
-
+dch -D $target -b \\
+    -v "$VERSION~$target~$RELEASE-$opts{build_num}" \\
+    "Rebuild for Ubuntu ($target)" \\
+    < /dev/null
 EOF
         return $exit unless $exit == 0;
 
@@ -371,6 +381,7 @@ EOF
         my $fpath = File::Spec->abs2rel("$Bin/$pkgname.dsc");
 
         say "Building $fpath";
+        return -1 if $opts{check_files};
 
         create_tarball($path);
 
@@ -420,7 +431,7 @@ sub build_package {
     return if -e $path && !$opts{force};
 
     say "Building ", File::Spec->abs2rel($path), " for $target";
-
+    return -1 if $opts{check_files};
 
     my $cmdopts = "";
     $cmdopts .= " --verbose" if $opts{verbose};
@@ -435,7 +446,11 @@ sub build_package {
     my $exit = Sh::run(<<"EOF");
 @{[ script_opts ]}
 
-sbuild -d $target $cmdopts --build-dir '$builddir' '$dsc'
+sbuild \\
+    -d $target \\
+    $cmdopts \\
+    --build-dir '$builddir' \\
+    '$dsc'
 EOF
 
     return $exit
