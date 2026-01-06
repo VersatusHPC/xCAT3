@@ -1,0 +1,32 @@
+ARG RELEASEVER=24.04
+
+FROM ghcr.io/hifis-net/ubuntu-systemd:${RELEASEVER}
+
+ARG RELEASEVER
+ENV DEBIAN_FRONTEND=noninteractive
+ENV container=podman
+
+# Traceability
+RUN echo "RELEASEVER=${RELEASEVER}"
+
+# -------- base packages for xCAT --------
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        ca-certificates \
+        apt-transport-https \
+        gnupg \
+        lsb-release \
+        hostname \
+        sudo \
+        perl \
+        perl-modules \
+        iproute2 \
+        net-tools \
+        procps \
+        curl \
+        wget \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /workspace
+
+STOPSIGNAL SIGRTMIN+3

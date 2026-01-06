@@ -58,7 +58,6 @@ my @PACKAGES = qw(
     xCAT-server
     xCAT-vlan
     xCAT-test
-    xCAT-genesis-scripts
 );
 # xCAT-genesis-scripts
 
@@ -494,10 +493,6 @@ sub create_target_directories {
     my @paths = map { "$basedir/$_" } @_;
     make_path(@paths);
     return List::Util::all { -d  } @paths;
-}
-
-sub setup_reprepro {
-    die "TODO";
 }
 
 sub create_repos {

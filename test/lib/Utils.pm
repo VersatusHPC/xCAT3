@@ -4,7 +4,7 @@ use feature 'say';
 
 use Data::Dumper qw(Dumper);
 use Exporter qw(import);
-use Carp; qw(croak);
+use Carp;
 
 use File::Slurper qw(write_text read_lines read_text);
 use List::Util qw(first);
