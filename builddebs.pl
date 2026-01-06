@@ -90,7 +90,7 @@ my %opts = (
     repos_path => "/var/www/html/repos/xcat-core",
     create_repos => 0,
     nginx_port => 8080,
-    xcat_dep_mirror => "https://mirror.versatushpc.com.br/xcat/apt/xcat-dep"
+    xcat_dep_mirror => "https://mirror.versatushpc.com.br/xcat/apt/xcat-dep",
 );
 
 GetOptions(
@@ -161,7 +161,7 @@ sub init {
         unless -d $basepath;
     my $path = "$basepath/$target-amd64-sbuild.tar.zst";
 
-    return if -e $path && ! $opts{force};
+    return 0 if -e $path && ! $opts{force};
     say "Initializing $path";
 
     return Sh::run(<<"EOF");
@@ -317,7 +317,7 @@ sub create_tarball {
         grep_file "$path/debian/changelog", qr/$name\s+\(([^\-]+)/;
 
     my $tarname = "$Bin/${name}_$version.orig.tar.gz";
-    return if !$opts{force} && -e $tarname && !source_changed($tarname, $path);
+    return 0 if !$opts{force} && -e $tarname && !source_changed($tarname, $path);
 
     say "Building ", File::Spec->abs2rel($tarname);
     return -1 if $opts{check_files};
@@ -427,7 +427,7 @@ sub build_package {
 
     my $deb = "${name}_$arch.deb";
     my $path = "$opts{output}/ubuntu/$target/$deb";
-    return if -e $path && !$opts{force};
+    return 0 if -e $path && !$opts{force};
 
     say "Building ", File::Spec->abs2rel($path), " for $target";
     return -1 if $opts{check_files};
@@ -568,7 +568,7 @@ sub build_all {
             name => $name,
         };
         $times{$pid} = tv_interval([$times{$pid}]);
-        return if $aborting;
+        return -1 if $aborting;
         if ($exit != 0 && !$opts{keep_going}) {
             $aborting = 1;
             say STDERR "!!!FAILURE!!! Build process $name, failed with exit status: $exit, aborting ...";
@@ -644,7 +644,6 @@ sub main {
     return build_all if $opts{build_all};
 
     pod2usage(2);
-    return -1;
 };
 
 __END__

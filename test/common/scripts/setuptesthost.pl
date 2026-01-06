@@ -94,6 +94,7 @@ sub imageexists {
 sub cleanupcontainerandimage {
     my ($container, $image) = @_;
     return sh(<<"EOF", -mayfail => 1);
+set +e
 podman kill $container
 podman rm -f $container
 podman rmi -f $image

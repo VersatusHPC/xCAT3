@@ -1,14 +1,21 @@
+#!/usr/bin/perl
 use strict;
 use warnings;
+use v5.10;
 
 use Getopt::Long qw(GetOptions);
+use Pod::Usage;
 
 my %opts = (
     nginx_port => "8080",
+    run_local => 0,
+    verbose => 0,
 );
 
 GetOptions(
     "nginx-port=i" => \$opts{nginx_port},
+    "run-local" => \$opts{run_local},
+    "verbose" => \$opts{verbose},
 ) or pod2usage(2);
 
 exit(main());
@@ -20,21 +27,38 @@ sub write_text {
     print {$fh} $text;
 }
 
+sub sh {
+    my ($cmd) = @_;
+    my $bashopts = "";
+    $bashopts .= "set -x; "
+        if $opts{verbose};
+    system(<<"EOF")
+bash -lc '
+$bashopts
+$cmd
+'
+EOF
+}
+
 sub setup_local_repos {
+    my $host = $opts{run_local}
+        ? "localhost"
+        : "host.containers.internal";
+
     my $LOCAL_REPOS_LIST = <<"EOF";
-deb [trusted=yes; allow-insecure=yes] http://host.containers.internal:$opts{nginx_port}/repos/xcat-core jammy main
-deb [trusted=yes; allow-insecure=yes] http://host.containers.internal:$opts{nginx_port}/repos/xcat-dep focal main
+deb [trusted=yes; allow-insecure=yes] http://$host:$opts{nginx_port}/repos/xcat-core jammy main
+deb [trusted=yes; allow-insecure=yes] http://$host:$opts{nginx_port}/repos/xcat-dep focal main
 EOF
     write_text("/etc/apt/sources.list.d/local-repos.list", $LOCAL_REPOS_LIST);
-    system("apt update -y");
+    sh("apt update -y");
 }
 
 sub install_packages {
-    system("apt update -y && apt install -y --allow-unauthenticated xcat xcat-test");
+    sh("apt update -y && apt install -y --allow-unauthenticated xcat xcat-test");
 }
 
 sub run_ci_tests {
-    system("bash -lec 'xcattest -s ci_test'");
+    sh("bash -lec 'xcattest -s ci_test'");
 }
 
 sub main {
