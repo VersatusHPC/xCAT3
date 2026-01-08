@@ -27,6 +27,9 @@ my @DEPS = qw(
     libscalar-list-utils-perl
     libfile-slurper-perl
     apt-cacher-ng
+    mmdebstrap
+    sbuild
+    nginx
 );
 
 eval {
@@ -59,6 +62,7 @@ my @PACKAGES = qw(
     xCAT-vlan
     xCAT-test
 );
+# xCAT-probe
 # xCAT-genesis-scripts
 
 my @TARGETS = qw(
@@ -88,9 +92,11 @@ my %opts = (
     keep_going => 0,
     build_num => 1,
     repos_path => "/var/www/html/repos/xcat-core",
+    cache_path => "/var/cache/nginx/apt/xcat-dep",
     create_repos => 0,
     nginx_port => 8080,
     xcat_dep_mirror => "https://mirror.versatushpc.com.br/xcat/apt/xcat-dep",
+    chroot_mode => 'unshare',
 );
 
 GetOptions(
@@ -115,7 +121,9 @@ GetOptions(
     "keep-going" => \$opts{keep_going},
     "build-num=i" => \$opts{build_num},
     "repos-path=s" => \$opts{repos_path},
+    "cache-path=s" => \$opts{cache_path},
     "nginx-port=i" => \$opts{nginx_port},
+    "chroot-mode=s" => \$opts{chroot_mode},
 ) or pod2usage(2);
 
 exit(main());
@@ -159,7 +167,7 @@ sub init {
     my $basepath = "$ENV{HOME}/.cache/sbuild";
     `mkdir -p $basepath`
         unless -d $basepath;
-    my $path = "$basepath/$target-amd64-sbuild.tar.zst";
+    my $path = "$basepath/$target-amd64-sbuild.tar.gz";
 
     return 0 if -e $path && ! $opts{force};
     say "Initializing $path";
@@ -178,6 +186,7 @@ mmdebstrap \\
     # disables stdin
 EOF
 }
+
 sub init_reprepro {
     my ($repos_path) = @_;
     $repos_path //= $opts{repos_path};
@@ -216,12 +225,23 @@ sub init_nginx {
     my ($port) = @_;
     $port //= $opts{nginx_port};
 
-    make_path($opts{repos_path});
-    my ($mirror_url, $mirror_path) = split '/', $opts{xcat_dep_mirror}, 2;
-    $mirror_path =~ s|/$||;
+    make_path($opts{repos_path}, user => 'www-data', group => 'www-data');
+    make_path($opts{cache_path}, user => 'www-data', group => 'www-data');
+    my $mirror_url = $opts{xcat_dep_mirror};
+    my ($mirror_host) = $mirror_url =~ qr|https?://([^/]+)/|;
+    die "Could not parse host in $mirror_url"
+        unless defined $mirror_host;
 
+    $mirror_url .= "/"
+        unless $mirror_url =~ qr|/$|; 
+
+    sed_file { s/listen 80 default_server/listen 8000 default_server/ }
+        "/etc/nginx/sites-available/default";
+    sed_file { s/listen \[::\]:80 default_server/listen [::]:8000 default_server/ }
+        "/etc/nginx/sites-available/default";
+  
     write_text("/etc/nginx/conf.d/local-repos.conf", <<"EOF");
-proxy_cache_path /var/cache/nginx/apt/xcat-dep
+proxy_cache_path $opts{cache_path}
     levels=1:2
     keys_zone=xcatdep_cache:100m
     max_size=20g
@@ -234,12 +254,13 @@ server {
     root /var/www/html/;
 
     location /repos/xcat-dep/ {
-      	proxy_pass $mirror_url/$mirror_path/;
+      	proxy_pass $mirror_url;
         proxy_cache xcatdep_cache;
         proxy_cache_valid 200 301 302 30d;
         proxy_cache_lock on;
         proxy_cache_use_stale error timeout updating http_500 http_502 http_503 http_504;
-        proxy_set_header Host $mirror_url;
+        proxy_set_header Host $mirror_host;
+        proxy_ssl_server_name on;
         proxy_ignore_headers Cache-Control Expires;
         add_header X-Cache \$upstream_cache_status;
     }
@@ -449,6 +470,7 @@ sbuild \\
     -d $target \\
     $cmdopts \\
     --build-dir '$builddir' \\
+    --chroot-mode $opts{chroot_mode} \\
     '$dsc'
 EOF
 
@@ -486,6 +508,7 @@ sub print_summary {
         say sprintf("Build finished: %-20s in $time (exit %d) (signal %d)", 
             $s->{name}, $s->{exit}, $s->{signal});
     }
+    say sprintf "Total time: %s", fmt_human_interval($times->{total});
 }
 
 sub create_target_directories {
@@ -499,6 +522,8 @@ sub create_repos {
     my ($targets, $out_path) = @_;
     $targets //= $opts{targets};
     $out_path //= $opts{repos_path};
+
+    make_path($out_path);
 
     my $exit = 0;
     for my $target ($targets->@*) {
@@ -551,6 +576,7 @@ sub build_all {
     my %times;
     my $aborting = 0;
 
+    $times{total} = gettimeofday();
     $pm->run_on_start(sub {
         my ($pid, $name) = @_;
         $times{$pid} = gettimeofday();
@@ -601,6 +627,7 @@ sub build_all {
                 $handle_timeout->();
             }
             $pm->wait_all_children;
+            $times{total} = tv_interval([$times{total}]);
             print_summary(\%summary, \%times);
             exit($exit);
 
@@ -626,6 +653,7 @@ sub build_all {
 
     # Create repositories serially to make reprepro life easier
     my $exit = create_repos($targets);
+    $times{total} = tv_interval([$times{total}]);
     print_summary(\%summary, \%times);
     return $exit;
 }

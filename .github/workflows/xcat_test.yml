@@ -7,26 +7,55 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Install dependencies
-        run: sudo apt-get install -y fakeroot reprepro devscripts debhelper libcapture-tiny-perl libjson-perl libsoap-lite-perl libdbi-perl libcgi-pm-perl quilt openssh-server dpkg looptools genometools software-properties-common
-      - name: Initialize
-        run: perl builddebs.pl --init jammy
-      - name: Build the packages
-        run: perl builddebs.pl --build-all --target jammy
-      - name: Run the tests
-        run: perl test/ubuntu/scripts/testxcat.pl --run-local
-      # - name: Run tests
-      #   run: perl github_action_xcat_test.pl
-
-  # Note: github_action_xcat_test.pl is debian dependent, we
-  #       need to generalize it before running on EL
-  # xcat_pr_test_el10:
-  #   runs-on: ubuntu-latest
-  #   container:
-  #     image: rockylinux/rockylinux:10
-  #   timeout-minutes: 60
-  #   steps:
-  #     - uses: actions/checkout@v4
-  #     - name: Install dependencies
-  #       run: dnf install -y fakeroot perl-Capture-Tiny perl-JSON perl-SOAP-Lite perl-DBI perl-CGI quilt openssh looptools 
-  #     - name: Run tests
-  #       run: perl github_action_xcat_test.pl
+        run: |
+          set -x
+          # Disable stdout
+          exec > /dev/null
+          sudo apt update -y && sudo apt-get install -y fakeroot reprepro devscripts debhelper libcapture-tiny-perl libjson-perl libsoap-lite-perl libdbi-perl libcgi-pm-perl quilt openssh-server dpkg looptools genometools software-properties-common libparallel-forkmanager-perl libscalar-list-utils-perl libfile-slurper-perl apt-cacher-ng mmdebstrap sbuild nginx
+      - name: Setup sbuild unshare environment
+        run: |
+          # 1. Enable unprivileged user namespaces (Required for Debian-based runners)
+          # This is requred for mmdebstrap to work
+          sudo sysctl -w kernel.unprivileged_userns_clone=1
+          
+          # 2. Setup UID/GID maps for the root user (since you use sudo for sbuild)
+          # We use tee -a to be safe, though these files are usually empty on runners
+          echo "root:165536:65536" | sudo tee -a /etc/subuid
+          echo "root:165536:65536" | sudo tee -a /etc/subgid
+          # Append a range of 65,536 IDs to /etc/subuid for the current user
+          # Append the same range to /etc/subgid for the current user
+          echo "$USER:100000:65536" | sudo tee -a /etc/subuid
+          echo "$USER:100000:65536" | sudo tee -a /etc/subgid
+          
+          # 3. Ensure uidmap package is present (usually is, but good for hits)
+          sudo apt-get install -y uidmap
+          
+          # 4. Verify newuidmap has SUID bit set (required for unshare mode)
+          ls -l /usr/bin/newuidmap
+      - name: Initialize repositories configuration
+        run: |
+          # Create /etc/nginx/conf.d/local-repos.conf
+          sudo perl builddebs.pl --init-nginx
+          # Create /var/www/html/repos/xcat-core reprepo configuration
+          sudo perl builddebs.pl --init-reprepro
+      - name: Initialize mmdestrap
+        run: |
+          # Create mmdebstrap rootfs at ~/.cache/sbuild/ for jammy
+          # if it does not exists
+          sudo perl builddebs.pl --init jammy
+      - name: Cache mmdebstrap output
+        uses: actions/cache@v4
+        with:
+          path: /root/.cache/sbuild
+          key: mmdebstrap-${{ runner.os }}-jammy
+      - name: Build the packages with sbuild
+        run: |
+          sudo env \
+          DEBFULLNAME="CI" \
+          DEBEMAIL="ci-github@versatushpc.com.br" \
+          perl builddebs.pl --build-all --target jammy
+      - name: Run the CI tests
+        run: |
+          sudo perl test/ubuntu/scripts/testxcat.pl --verbose \
+            --xcat-core-repo http://localhost:8080/repos/xcat-core/ \
+            --xcat-dep-repo  https://mirror.versatushpc.com.br/xcat/apt/xcat-dep/

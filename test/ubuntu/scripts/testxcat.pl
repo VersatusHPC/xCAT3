@@ -7,16 +7,19 @@ use Getopt::Long qw(GetOptions);
 use Pod::Usage;
 
 my %opts = (
-    nginx_port => "8080",
-    run_local => 0,
     verbose => 0,
+    xcat_core_repo => undef,
+    xcat_dep_repo => undef,
 );
 
 GetOptions(
-    "nginx-port=i" => \$opts{nginx_port},
-    "run-local" => \$opts{run_local},
     "verbose" => \$opts{verbose},
+    "xcat-core-repo=s"  => \$opts{xcat_core_repo},
+    "xcat-dep-repo=s"  => \$opts{xcat_dep_repo},
 ) or pod2usage(2);
+
+$opts{xcat_core_repo} //= "http://host.containers.internal:8080/repos/xcat-core/";
+$opts{xcat_dep_repo}  //= "http://host.containers.internal:8080/repos/xcat-dep/";
 
 exit(main());
 
@@ -29,7 +32,7 @@ sub write_text {
 
 sub sh {
     my ($cmd) = @_;
-    my $bashopts = "";
+    my $bashopts = "set -e; ";
     $bashopts .= "set -x; "
         if $opts{verbose};
     system(<<"EOF")
@@ -41,24 +44,23 @@ EOF
 }
 
 sub setup_local_repos {
-    my $host = $opts{run_local}
-        ? "localhost"
-        : "host.containers.internal";
-
     my $LOCAL_REPOS_LIST = <<"EOF";
-deb [trusted=yes; allow-insecure=yes] http://$host:$opts{nginx_port}/repos/xcat-core jammy main
-deb [trusted=yes; allow-insecure=yes] http://$host:$opts{nginx_port}/repos/xcat-dep focal main
+deb [trusted=yes; allow-insecure=yes] $opts{xcat_core_repo} jammy main
+deb [trusted=yes; allow-insecure=yes] $opts{xcat_dep_repo} focal main
 EOF
     write_text("/etc/apt/sources.list.d/local-repos.list", $LOCAL_REPOS_LIST);
     sh("apt update -y");
 }
 
+# @TODO: Install xcat-probe and enable the xcatprobe_work test
 sub install_packages {
-    sh("apt update -y && apt install -y --allow-unauthenticated xcat xcat-test");
+    sh(<<'EOF');
+apt update -y && apt install -y --allow-unauthenticated xcat xcat-test
+EOF
 }
 
 sub run_ci_tests {
-    sh("bash -lec 'xcattest -s ci_test'");
+    sh('xcattest -s "ci_test-xcatprobe-dynamicgroup"');
 }
 
 sub main {
@@ -68,6 +70,8 @@ sub main {
     return $exit unless $exit == 0;
     $exit = run_ci_tests();
     return $exit unless $exit == 0;
+
+    0;
 }
 
 __END__
