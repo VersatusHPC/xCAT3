@@ -23,7 +23,7 @@ Workflow:
 3. Provision the testing container for the same target.
 4. Execute the automated test suite inside the container.
 
-All  are idempotent. They only rebuild or reinstall what is missing. Pass `--force` to any step when you want to overwrite existing content.
+All scripts are idempotent. They only rebuild or reinstall what is missing. Pass `--force` to any step when you want to overwrite existing content.
 
 ## xCAT Runtime Dependencies (`../xcat-dep`)
 - The dependency repositories must live one directory above this repo, in `../xcat-dep`.
