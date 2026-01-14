@@ -1,0 +1,10 @@
+# xCAT is traditionally installed to /opt
+xcat: apache2-configuration-files-need-conf-suffix
+xcat: apache2-deprecated-auth-config
+xcat: bogus-mail-host-in-debian-changelog
+xcat: dir-or-file-in-opt
+xcat: maintainer-script-calls-init-script-directly
+xcat: missing-dep-for-interpreter
+xcat: non-standard-toplevel-dir
+xcat: shell-script-fails-syntax-check
+xcat: unreleased-changes

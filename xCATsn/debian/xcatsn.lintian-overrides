@@ -1,0 +1,4 @@
+xcatsn: apache2-configuration-files-need-conf-suffix
+xcatsn: dir-or-file-in-opt
+xcatsn: maintainer-script-calls-init-script-directly
+xcatsn: unreleased-changes

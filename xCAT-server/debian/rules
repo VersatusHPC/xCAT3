@@ -9,7 +9,7 @@
 # Uncomment this to turn on verbose mode.
 #export DH_VERBOSE=1
 
-export buildroot=$(PWD)/debian/xcat-server
+export buildroot=$(CURDIR)/debian/xcat-server
 export prefix=/opt/xcat
 export rootdir=$(buildroot)/$(prefix)
 
@@ -30,6 +30,11 @@ install:
 	dh_install -X".svn"
 	dh_link
 
+build-indep: build install
+  # Nothing to do
+
+build-arch: build install
+  # Nothing to do
 
 # Build architecture-independent files here.
 binary-indep: build install
@@ -40,6 +45,7 @@ binary-arch:
 	pwd
 	dh_testdir
 	dh_testroot
+	dh_lintian
 	dh_installchangelogs
 	dh_installdocs
 #	dh_installexamples
@@ -67,7 +73,7 @@ binary-arch:
 	chmod 644 $(rootdir)/lib/shfunctions
 	chmod 644 $(rootdir)/share/doc/packages/xCAT-server/*
 	echo "ScriptAlias /xcatws $(prefix)/ws/xcatws.cgi" > $(buildroot)/etc/apache2/conf-available/xcat-ws.conf
-	cat $(PWD)/xCAT-wsapi/xcat-ws.conf.ubuntu >>  $(buildroot)/etc/apache2/conf-available/xcat-ws.conf
+	cat $(CURDIR)/xCAT-wsapi/xcat-ws.conf.ubuntu >>  $(buildroot)/etc/apache2/conf-available/xcat-ws.conf
 	rm -rf $(rootdir)/ws/xcat-ws.conf*
 	ln -s ../conf-available/xcat-ws.conf $(buildroot)/etc/apache2/conf-enabled/xcat-ws.conf
 #	dh_installmenu

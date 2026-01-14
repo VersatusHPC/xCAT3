@@ -1,3 +1,9 @@
+xcat-server (3.0.0~RC1-1) UNRELEASED; urgency=medium
+
+  * Ubuntu 26.04 LTS support
+
+ -- Daniel Hilst <daniel@versatushpc.com.br>  Thu, 11 Dec 2025 13:13:38 -0300
+
 xcat-server (2.8snap-rev14173M-20121101) precise; urgency=low
 
   * Nightly_Builds

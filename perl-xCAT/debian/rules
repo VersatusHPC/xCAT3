@@ -17,12 +17,20 @@ clean:
 	dh_testdir
 	dh_testroot
 	dh_clean -d
+	# rm -vf $(CURDIR)/../perl-xcat*.{debian.tar.gz,build,buildinfo,debian,changes,dsc,deb}
 
 install:
 	dh_testdir
 	dh_testroot
 	dh_installdirs
 	dh_install -X".svn"
+
+build-arch: build
+	# nothing to do
+
+build-indep: build
+	# nothing to do
+
 
 # Build architecture-independent files here.
 binary-indep: build install
@@ -32,7 +40,9 @@ binary-indep: build install
 binary-arch: build install
 	dh_testdir
 	dh_testroot
+	dh_lintian
 	dh_installchangelogs
+	gzip -9 $(CURDIR)/debian/perl-xcat/usr/share/doc/perl-xcat/changelog.Debian
 	dh_installdocs
 #	dh_installexamples
 	dh_install -X".svn"
@@ -44,7 +54,7 @@ binary-arch: build install
 	chmod 644 `pwd`/debian/perl-xcat/opt/xcat/share/doc/man5/*
 	chmod 644 `pwd`/debian/perl-xcat/opt/xcat/share/man/man7/*
 	chmod 644 `pwd`/debian/perl-xcat/opt/xcat/share/doc/man7/*
-	./modifyUtils `cat ../Version` `git log -n 1 | head -n 1 | cut -f 2 -d ' '`
+	./modifyUtils $(shell dpkg-parsechangelog --show-field Version)  $(shell cat Gitinfo)
 #	dh_installmenu
 #	dh_installdebconf	
 #	dh_installlogrotate

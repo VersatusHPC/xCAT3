@@ -1,0 +1,5 @@
+# xCAT is traditionally installed to /opt
+xcat-client: dir-or-file-in-opt
+xcat-client: missing-dep-for-interpreter
+xcat-client: helper-templates-in-copyright
+xcat-client: unreleased-changes

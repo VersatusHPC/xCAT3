@@ -5,7 +5,14 @@ use warnings;
 use feature 'say';
 use Data::Dumper qw(Dumper);
 use Getopt::Long qw(GetOptions);
-use File::Slurper qw(read_text write_text);
+
+sub write_text {
+    my ($fpath, $text) = @_;
+    open my $fh, ">", $fpath
+        or die "open $fpath: $!";
+    print $fh $text;
+}
+
 
 my %opts = (
     releasever => int(`rpm --eval '%{rhel}'`),
@@ -24,13 +31,13 @@ GetOptions(
     'releasever=i' => \$opts{releasever},
     verbose => \$opts{verbose},
     quiet => \$opts{quiet},
-    setup_repos => \$opts{setup_repos},
+    "setup-repos" => \$opts{setup_repos},
     install => \$opts{install},
     uninstall => \$opts{uninstall},
     reinstall => \$opts{reinstall},
     validate => \$opts{validate},
     all => \$opts{all},
-    nginx_port => \$opts{nginx_port},
+    "nginx-port" => \$opts{nginx_port},
 ) or usage();
 
 sub sh {
@@ -48,7 +55,7 @@ sub sh {
 }
 
 sub usage {
-    say STDERR "usage $0: [--releasever=9] [--verbose] [--quiet] {--setup_repos|--install|--uninstall|--reinstall|--validate|--all} [--nginx-port=8080]";
+    say STDERR "usage $0: [--releasever=9] [--verbose] [--quiet] {--setup-repos|--install|--uninstall|--reinstall|--validate|--all} [--nginx-port=8080]";
 }
 
 sub setup_repos {
@@ -74,18 +81,16 @@ EOF
 }
 
 sub uninstall {
-    sh("dnf remove -y xCAT");
+    sh("dnf remove -y xCAT xCAT-test");
     sh("rm -rf /opt/xcat /etc/xcat /var/run/xcat /root/.xcat /install /tftpboot");
 }
 
 sub install {
-    sh("dnf install -y xCAT");
+    sh("dnf install -y xCAT xCAT-test");
 }
 
 sub validate {
-    # Put commands to validate xcat installation here
-    sh("systemctl is-active xcatd") == 0 or die("xcatd not running?");
-    sh("lsdef") == 0 or die("lsdef not working");
+    sh("xcattest -s ci_test");
 }
 
 sub main {

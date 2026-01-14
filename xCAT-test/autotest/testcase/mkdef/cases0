@@ -94,7 +94,7 @@ end
 
 start:mkdef_dynamic_group
 description:mkdef with dynamic node group
-label:mn_only,ci_test,db
+label:mn_only,ci_test,db,dynamicgroup
 cmd:tabdump nodegroup
 cmd:tabdump nodelist
 cmd:mkdef -t node -o testnode1-testnode2 mgt=hmc cons=hmc groups=all,systemp

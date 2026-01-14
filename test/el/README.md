@@ -71,32 +71,32 @@ Under the hood the script invokes [mock](https://rpm-software-management.github.
 All builds run in parallel according to `--nproc`. Be aware that mock consumes significant disk space (plan for at least ~50 GB between `/var/lib/mock` and `/var/cache/mock`).
 
 ### nginx on Port 8080
-- `buildrpms.pl` assumes nginx exposes the generated repository on port 8080. Manually update the main nginx configuration (for example `/etc/nginx/nginx.conf`) so that it listens on `8080` port. The scripts will create a `/etc/nginx/conf.d/xcat-repos.conf` file with all the repositories configured and restart
+- `buildrpms.pl` assumes nginx exposes the generated repository on port 8080. Manually update the main nginx configuration (for example `/etc/nginx/nginx.conf`) so that it listens on `8080` port. The  will create a `/etc/nginx/conf.d/xcat-repos.conf` file with all the repositories configured and restart
 nginx at each run.
 
 ## Preparing the Test Container
 ```bash
-test/scripts/setuptesthost.pl --setup_container --target <target> [--force]
+test/common/setuptesthost.pl --setup-container --distro el --releasever 9 [--force]
 ```
 
-- This builds a container image and creates a container named `xcattest-elX` (X is 8, 9 or 10 depending on the target).
+- This builds a container image and creates a container named `xcattest-elX` (X is 8, 9 or 10 depending on the `--releasever`).
 - The container setup is idempotent: it checks for an existing container/image and skips recreation unless you provide `--force`.
-- The EL `RELEASEVER` (8, 9 or 10) is deduced from the target which is expected to be a triple in the format `<DISTRO>-<RELEASEVER>-<ARCH>` and it is used to as `--build-arg RELEASEVER=<RELEASEVER>` during the container image building.
+
 
 ## Running the Automated Tests
 Once the container exists and nginx is serving the repo:
 
 ```bash
-podman exec -it xcattest-el10 scripts/testxcat.pl --all
+podman exec -it xcattest-el10 /testxcat.pl --all
 ```
 
 - Replace `xcattest-el10` with the appropriate container name. The script configures the repository inside the container, installs xCAT, ensures `xcatd` is running, and finally runs `lsdef` to verify daemon connectivity.
 - The tester exposes additional knobs: use `--setup_repos`, `--install`, `--uninstall`, `--reinstall`, `--validate`, or `--all` (default in the example) plus `--nginx_port` if your repo is served on a different port. Combine these as needed to drive just one phase or the entire install/validate pass.
-- You can safely rerun the command; it will reuse the container state unless `--force` is supplied to the helper scripts, and `--reinstall` forces a clean uninstall/install cycle inside the container.
+- You can safely rerun the command; it will reuse the container state unless `--force` is supplied to the helper , and `--reinstall` forces a clean uninstall/install cycle inside the container.
 
 ## End-to-End Checklist
 - Dependencies extracted to `../xcat-dep` for all EL versions you plan to build.
 - `buildrpms.pl` completes successfully for the target and produces a repository.
 - nginx listens on port 8080 and serves the generated repository.
-- `test/scripts/setuptesthost.pl --setupcontainer --target <target>` creates or updates the `xcattest-elX` container.
-- `podman exec -it xcattest-elX scripts/testxcat.pl --all` runs to completion and verifies the xCAT stack inside the container.
+- `test/common/setuptesthost.pl --setupcontainer --target <target>` creates or updates the `xcattest-elX` container.
+- `podman exec -it xcattest-elX /testxcat.pl --all` runs to completion and verifies the xCAT stack inside the container.

@@ -28,9 +28,16 @@ install:
 	ln -sf ../bin/xcatclientnnr debian/xcat-vlan/opt/xcat/bin/rmvlan
 	ln -sf ../bin/xcatclientnnr debian/xcat-vlan/opt/xcat/bin/lsvlan
 
+build-indep: build install
+
+build-arch:
+
 binary-indep: build install
 
 binary-arch:
+	dh_lintian
+	dh_installchangelogs
+	# gzip -9 $(CURDIR)/debian/xcat-vlan/usr/share/doc/xcat-vlan/changelog.Debian
 	dh_compress
 	dh_installdeb
 	dh_gencontrol

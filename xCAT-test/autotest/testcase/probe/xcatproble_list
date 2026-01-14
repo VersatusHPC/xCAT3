@@ -1,6 +1,6 @@
 start:xcatprobe_work
 description:To test if xcatprobe list works. This case must run in xcat mn
-label:mn_only,ci_test
+label:mn_only,ci_test,xcatprobe
 cmd:mkdir -p /tmp/xcatprobe_l
 cmd:xcatprobe -l
 check:rc==0

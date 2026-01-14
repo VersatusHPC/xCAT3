@@ -7,7 +7,7 @@ RUN dnf install -y epel-release
 RUN echo "RELEASEVER=${RELEASEVER}"
 RUN if [[ "${RELEASEVER}" == "8" ]]; then \
         dnf config-manager --set-enabled powertools epel; \
-    elif [[ "${RELEASEVER}" =~ /(9|10)/ ]]; then \
+    elif [[ "${RELEASEVER}" =~ (9|10) ]]; then \
         dnf config-manager --set-enabled crb epel; \
     else \
         echo "Invalid RELEASEVER=${RELEASEVER}"; \

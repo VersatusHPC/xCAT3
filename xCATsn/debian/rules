@@ -25,6 +25,10 @@ install:
 	dh_install -X".svn"
 	dh_link
 
+build-indep:
+
+build-arch:
+
 # Build architecture-independent files here.
 binary-indep: build install
 # We have nothing to do by default.
@@ -33,6 +37,7 @@ binary-indep: build install
 binary-arch:
 	pwd
 	dh_testdir
+	dh_lintian
 	dh_testroot
 	dh_installchangelogs
 	dh_installdocs
