@@ -259,6 +259,10 @@ Areas that currently assume ISC DHCP must become backend-aware:
 Testing Strategy
 ----------------
 
+The standing validation baseline for DHCP backend work is maintained in
+``dhcp_backend_validation_matrix.rst``. Use that matrix as the default gate for
+future DHCP backend changes.
+
 Unit tests:
 
 * normalized DHCP intent creation
