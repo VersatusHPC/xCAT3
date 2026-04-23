@@ -93,9 +93,14 @@ sub new_backend {
     return $selection if $selection->{error};
 
     my $backend_class = $class->backend_class( $selection->{name} );
-    ( my $backend_file = "$backend_class.pm" ) =~ s{::}{/}g;
     my $loaded = eval {
-        require $backend_file;
+        if ( $selection->{name} eq 'isc' ) {
+            require xCAT::DHCP::Backend::ISC;
+        } elsif ( $selection->{name} eq 'kea' ) {
+            require xCAT::DHCP::Backend::Kea;
+        } else {
+            die "Unknown DHCP backend '$selection->{name}'";
+        }
         1;
     };
     if (!$loaded) {
