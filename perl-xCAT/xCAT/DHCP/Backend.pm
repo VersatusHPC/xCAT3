@@ -16,7 +16,7 @@ sub normalize {
     return;
 }
 
-sub select {
+sub choose {
     my ( $class, %args ) = @_;
 
     my $requested = exists $args{requested} ? $args{requested} : $class->_site_backend();
@@ -89,12 +89,16 @@ sub backend_class {
 sub new_backend {
     my ( $class, %args ) = @_;
 
-    my $selection = $class->select(%args);
+    my $selection = $class->choose(%args);
     return $selection if $selection->{error};
 
     my $backend_class = $class->backend_class( $selection->{name} );
-    eval "require $backend_class";
-    if ($@) {
+    ( my $backend_file = "$backend_class.pm" ) =~ s{::}{/}g;
+    my $loaded = eval {
+        require $backend_file;
+        1;
+    };
+    if (!$loaded) {
         return {
             %$selection,
             error => "Unable to load DHCP backend '$selection->{name}': $@",
@@ -105,19 +109,23 @@ sub new_backend {
 }
 
 sub _site_backend {
-    eval {
+    my $backend = eval {
         require xCAT::TableUtils;
         return xCAT::TableUtils->get_site_attribute('dhcpbackend', 'auto');
-    } || 'auto';
+    };
+
+    return $backend || 'auto';
 }
 
 sub _osver {
     my ( $class, $type ) = @_;
 
-    eval {
+    my $osver = eval {
         require xCAT::Utils;
         return defined($type) ? xCAT::Utils->osver($type) : xCAT::Utils->osver();
-    } || 'unknown';
+    };
+
+    return $osver || 'unknown';
 }
 
 sub _command_exists {

@@ -137,6 +137,8 @@ sub write_file {
     open(my $fh, '>', $path) or die "Unable to write $path: $!";
     print $fh $content;
     close($fh) or die "Unable to close $path: $!";
+
+    return 1;
 }
 
 sub start_daemon {

@@ -707,7 +707,8 @@ sub _control_agent_not_found {
 }
 
 sub _first_defined {
-    foreach my $value (@_) {
+    my @values = @_;
+    foreach my $value (@values) {
         return $value if defined $value;
     }
 

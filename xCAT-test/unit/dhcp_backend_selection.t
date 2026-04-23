@@ -50,43 +50,43 @@ is(
 );
 
 is(
-    xCAT::DHCP::Backend->select( requested => 'isc', os => 'rhel10', platform => 'el10' )->{name},
+    xCAT::DHCP::Backend->choose( requested => 'isc', os => 'rhel10', platform => 'el10' )->{name},
     'isc',
     'explicit ISC override wins on EL10'
 );
 
 is(
-    xCAT::DHCP::Backend->select( requested => 'kea', os => 'rhel9', platform => 'el9' )->{name},
+    xCAT::DHCP::Backend->choose( requested => 'kea', os => 'rhel9', platform => 'el9' )->{name},
     'kea',
     'explicit Kea override wins on EL9'
 );
 
 is(
-    xCAT::DHCP::Backend->select( requested => 'auto', os => 'rhel9', platform => 'el9' )->{name},
+    xCAT::DHCP::Backend->choose( requested => 'auto', os => 'rhel9', platform => 'el9' )->{name},
     'isc',
     'auto selects ISC on EL9'
 );
 
 is(
-    xCAT::DHCP::Backend->select( requested => 'auto', os => 'rhel10', platform => 'el10' )->{name},
+    xCAT::DHCP::Backend->choose( requested => 'auto', os => 'rhel10', platform => 'el10' )->{name},
     'kea',
     'auto selects Kea on EL10'
 );
 
 is(
-    xCAT::DHCP::Backend->select( requested => 'auto', os => 'ubuntu24.04', os_name => 'ubuntu', version => '24.04' )->{name},
+    xCAT::DHCP::Backend->choose( requested => 'auto', os => 'ubuntu24.04', os_name => 'ubuntu', version => '24.04' )->{name},
     'kea',
     'auto selects Kea on Ubuntu 24.04'
 );
 
 like(
-    xCAT::DHCP::Backend->select( requested => 'invalid' )->{error},
+    xCAT::DHCP::Backend->choose( requested => 'invalid' )->{error},
     qr/Invalid site\.dhcpbackend/,
     'invalid explicit backend returns a clear error'
 );
 
 like(
-    xCAT::DHCP::Backend->select(
+    xCAT::DHCP::Backend->choose(
         requested       => 'kea',
         check_available => 1,
         available       => { kea => 0 },
@@ -96,7 +96,7 @@ like(
 );
 
 is(
-    xCAT::DHCP::Backend->select(
+    xCAT::DHCP::Backend->choose(
         requested       => 'kea',
         check_available => 1,
         available       => { kea => 1 },

@@ -1,5 +1,8 @@
 #!/usr/bin/perl -w
 #use Data::Dumper;
+use strict;
+use warnings;
+
 BEGIN
 {
     $::XCATROOT = $ENV{'XCATROOT'} ? $ENV{'XCATROOT'} : '/opt/xcat';
@@ -101,7 +104,8 @@ if($help){
     }
 
     my $omshell;
-    open($omshell, "|/usr/bin/omshell >/dev/null");
+    open($omshell, '|-', '/bin/sh', '-c', '/usr/bin/omshell >/dev/null')
+      or die "Unable to start omshell: $!";
     print $omshell "key "
       . $id . " \""
       . $passwd . "\"\n";

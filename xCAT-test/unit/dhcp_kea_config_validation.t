@@ -202,7 +202,9 @@ sub validation_temp_dir {
     my $command = shell_quote($kea_dhcp4) . ' -t ' . shell_quote($path) . ' 2>&1';
     my $output = `$command`;
     unlink $path;
-    return undef if $output =~ /Unable to open file/;
+    if ( $output =~ /Unable to open file/ ) {
+        return;
+    }
 
     return '';
 }
