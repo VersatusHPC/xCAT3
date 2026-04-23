@@ -68,7 +68,12 @@ The ``auto`` setting keeps ISC DHCP on platforms where it is still available and
 4.
  
  Then run \ **makedhcp**\  with a noderange or the \ **-a**\  option.  This will inject DHCP configuration data pertinent to the specified nodes.
- With ISC DHCP, Linux node entries are updated through OMAPI. With Kea DHCP, node reservations are rendered into the Kea JSON configuration, validated, and the Kea service is restarted.
+ With ISC DHCP, Linux node entries are updated through OMAPI and ``omshell``.
+ With Kea DHCP, xCAT stores node reservations in the Kea JSON configuration and,
+ when the Kea Control Agent and host-commands hook are enabled, performs live
+ reservation add and delete operations through the Kea control API. If the live
+ control path is unavailable, xCAT validates the updated Kea configuration and
+ restarts the Kea services.
  
 
 
@@ -88,7 +93,7 @@ OPTIONS
  The \ **makedhcp**\  command will automatically restart the dhcp daemon after this operation.
  This option will replace any existing configuration file (making a backup of it first).
  For Linux systems using ISC DHCP, the file will include network entries as well as certain general parameters such as a dynamic range and omapi configuration.
- For Linux systems using Kea DHCP, the generated files are ``/etc/kea/kea-dhcp4.conf``, ``/etc/kea/kea-dhcp6.conf`` when IPv6 networks are configured, and ``/etc/kea/kea-dhcp-ddns.conf`` when DDNS is enabled.
+ For Linux systems using Kea DHCP, the generated files are ``/etc/kea/kea-dhcp4.conf``, ``/etc/kea/kea-dhcp6.conf`` when IPv6 networks are configured, ``/etc/kea/kea-ctrl-agent.conf`` when the Kea Control Agent is enabled, and ``/etc/kea/kea-dhcp-ddns.conf`` when DDNS is enabled.
  For AIX systems the file will include network entries.
  On AIX systems, if there are any non-xCAT entries in the existing configuration file they will be preserved and added to the end of the new configuration file.
  
