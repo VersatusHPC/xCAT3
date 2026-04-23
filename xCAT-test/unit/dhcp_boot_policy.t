@@ -15,13 +15,44 @@ is( $fallback_by_name{'xcat-bios'}{'boot-file-name'}, 'pxelinux.0', 'BIOS client
 ok( !exists $fallback_by_name{'xcat-xnba-bios'}, 'xNBA user-class is not advertised without xNBA kpxe' );
 
 my $classes = xCAT::DHCP::BootPolicy->kea_client_classes(xnba_kpxe => 1, xnba_efi => 1);
-is( scalar @$classes, 6, 'Kea boot policy renders expected xNBA client classes' );
+is( scalar @$classes, 5, 'Kea boot policy renders expected xNBA client classes' );
 
 my %by_name = map { $_->{name} => $_ } @$classes;
 is( $by_name{'xcat-bios'}{'boot-file-name'}, 'xcat/xnba.kpxe', 'BIOS clients receive xNBA kpxe' );
+like( $by_name{'xcat-bios'}{test}, qr/not \(\(option\[77\]\.exists/, 'generic BIOS class excludes xNBA second-stage clients' );
 like( $by_name{'xcat-uefi-x64'}{test}, qr/0x0007/, 'UEFI x64 class matches architecture 7' );
 like( $by_name{'xcat-uefi-x64'}{test}, qr/0x0009/, 'UEFI x64 class matches architecture 9' );
+like( $by_name{'xcat-uefi-x64'}{test}, qr/not \(\(option\[77\]\.exists/, 'generic UEFI class excludes xNBA second-stage clients' );
 is( $by_name{'xcat-aarch64'}{'boot-file-name'}, 'boot/grub2/grub2.aarch64', 'AArch64 clients receive grub2 boot file' );
 is( $by_name{'xcat-ppc64'}{'boot-file-name'}, '/boot/grub2/grub2.ppc', 'POWER clients receive grub2 Open Firmware boot file' );
+
+my $xnba_classes = xCAT::DHCP::BootPolicy->kea_xnba_node_classes(
+    xnba_efi => 1,
+    nodes    => [
+        {
+            node        => 'cn01',
+            mac         => '52:54:4b:10:00:11',
+            next_server => '10.241.10.1',
+            httpport    => '80',
+        },
+    ],
+);
+is( scalar @$xnba_classes, 2, 'xNBA node policy renders BIOS and UEFI second-stage classes' );
+my %xnba_by_name = map { $_->{name} => $_ } @$xnba_classes;
+my $xnba_bios = $xnba_by_name{'xcat-xnba-cn01-52544b100011-bios'};
+ok( $xnba_bios, 'xNBA BIOS second-stage class is named by node and MAC' );
+like( $xnba_bios->{test}, qr/option\[77\]\.text == 'xNBA'/, 'xNBA second-stage class matches text user-class' );
+like( $xnba_bios->{test}, qr/substring\(option\[77\]\.hex,1,4\) == 'xNBA'/, 'xNBA second-stage class matches tuple-encoded user-class' );
+like( $xnba_bios->{test}, qr/pkt4\.mac == 0x52544b100011/, 'xNBA second-stage class matches the node MAC' );
+is( $xnba_bios->{'boot-file-name'}, 'http://10.241.10.1:80/tftpboot/xcat/xnba/nodes/cn01', 'xNBA BIOS class returns the node script URL' );
+is( $xnba_bios->{'user-context'}{'xcat-purpose'}, 'xnba-second-stage', 'xNBA class carries removable user-context' );
+is( $xnba_by_name{'xcat-xnba-cn01-52544b100011-uefi'}{'boot-file-name'}, 'http://10.241.10.1:80/tftpboot/xcat/xnba/nodes/cn01.uefi', 'xNBA UEFI class returns the UEFI node script URL' );
+
+my $combined_classes = xCAT::DHCP::BootPolicy->kea_client_classes(
+    xnba_kpxe         => 1,
+    xnba_efi          => 1,
+    xnba_node_classes => $xnba_classes,
+);
+is( $combined_classes->[0]{name}, 'xcat-xnba-cn01-52544b100011-bios', 'node-specific xNBA classes have priority over generic boot classes' );
 
 done_testing();

@@ -325,6 +325,28 @@ Open test infrastructure details to confirm:
 * whether nested or privileged test guests can run DHCP client and PXE tests
 * cleanup expectations for temporary VMs, networks, and storage volumes
 
+Manual Validation Snapshot
+--------------------------
+
+As of April 23, 2026, the branch has been exercised on KVM guests across ISC
+and Kea backends:
+
+* EL10 plus Kea on x86_64: passed end-to-end xNBA netboot with a Rocky 10.1
+  compute image. The node fetched the xNBA script, kernel, initrd, and rootimg,
+  then reached xCAT ``netbooting`` state.
+* Ubuntu 24.04 plus Kea on x86_64: passed xNBA shell boot and full netboot
+  image fetch. The node downloaded the node script, Genesis artifacts, and the
+  generated root image, and Kea reservation queries succeeded.
+* EL9 plus ISC on x86_64: passed legacy ISC plus xNBA shell boot, including
+  DHCP, TFTP, node-script handoff, and Genesis fetch.
+* Ubuntu 22.04 plus ISC on x86_64: passed legacy ISC DHCP, TFTP, generated
+  xNBA network script, and Genesis fetch. Per-node OMAPI reservation updates on
+  Jammy still fail with ``omshell`` descriptor errors and appear to be a
+  preexisting Ubuntu-specific ISC issue outside the Kea scope.
+* EL10 plus Kea on ppc64le: Kea and the Kea boot handoff reached xCAT Genesis,
+  but Genesis failed loading ``genesis.kernel.ppc64`` because of a preexisting
+  invalid ELF image issue unrelated to Kea.
+
 Implementation Order
 --------------------
 

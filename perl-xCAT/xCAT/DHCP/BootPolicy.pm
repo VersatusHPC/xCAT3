@@ -6,22 +6,17 @@ use warnings;
 sub kea_client_classes {
     my ( $class, %opts ) = @_;
 
+    my $xnba_user_class = xnba_user_class_test();
     my $bios_boot = $opts{xnba_kpxe} ? 'xcat/xnba.kpxe' : 'pxelinux.0';
     my $uefi_boot = $opts{xnba_efi}  ? 'xcat/xnba.efi'  : '';
     my @classes;
 
-    if ( $opts{xnba_kpxe} ) {
-        push @classes, {
-            name             => 'xcat-xnba-bios',
-            test             => "option[77].text == 'xNBA' and option[93].hex == 0x0000",
-            'boot-file-name' => 'xcat/xnba.kpxe',
-        };
-    }
+    push @classes, @{ $opts{xnba_node_classes} || [] };
 
     push @classes, (
         {
             name             => 'xcat-bios',
-            test             => 'option[93].hex == 0x0000',
+            test             => "option[93].hex == 0x0000 and not ($xnba_user_class)",
             'boot-file-name' => $bios_boot,
         },
     );
@@ -29,7 +24,7 @@ sub kea_client_classes {
     if ($uefi_boot ne '') {
         push @classes, {
             name             => 'xcat-uefi-x64',
-            test             => 'option[93].hex == 0x0007 or option[93].hex == 0x0009',
+            test             => "(option[93].hex == 0x0007 or option[93].hex == 0x0009) and not ($xnba_user_class)",
             'boot-file-name' => $uefi_boot,
         };
     }
@@ -53,6 +48,74 @@ sub kea_client_classes {
     );
 
     return \@classes;
+}
+
+sub kea_xnba_node_classes {
+    my ( $class, %opts ) = @_;
+
+    my $nodes = $opts{nodes} || [];
+    my $xnba_user_class = xnba_user_class_test();
+    my @classes;
+
+    foreach my $node (@$nodes) {
+        next unless $node->{node} && $node->{mac} && $node->{next_server};
+        my $class_base = _xnba_class_base( $node->{node}, $node->{mac} );
+        my $mac_test = _mac_test( $node->{mac} );
+        my $base_url = 'http://' . $node->{next_server} . ':' . ( $node->{httpport} || '80' ) . '/tftpboot/xcat/xnba/nodes/' . $node->{node};
+
+        push @classes, {
+            name             => "$class_base-bios",
+            test             => "$xnba_user_class and option[93].hex == 0x0000 and $mac_test",
+            'boot-file-name' => $base_url,
+            'user-context'   => _xnba_user_context($node),
+        };
+
+        if ( $opts{xnba_efi} ) {
+            push @classes, {
+                name             => "$class_base-uefi",
+                test             => "$xnba_user_class and option[93].hex == 0x0009 and $mac_test",
+                'boot-file-name' => "$base_url.uefi",
+                'user-context'   => _xnba_user_context($node),
+            };
+        }
+    }
+
+    return \@classes;
+}
+
+sub xnba_user_class_test {
+    return "(option[77].exists and (option[77].text == 'xNBA' or option[77].hex == 0x784e4241 or substring(option[77].hex,1,4) == 'xNBA'))";
+}
+
+sub _xnba_class_base {
+    my ( $node, $mac ) = @_;
+
+    my $safe_node = $node;
+    $safe_node =~ s/[^A-Za-z0-9_.-]/_/g;
+
+    my $safe_mac = lc($mac);
+    $safe_mac =~ s/[^0-9a-f]//g;
+
+    return "xcat-xnba-$safe_node-$safe_mac";
+}
+
+sub _mac_test {
+    my ($mac) = @_;
+
+    my $mac_hex = lc($mac);
+    $mac_hex =~ s/[^0-9a-f]//g;
+
+    return "pkt4.mac == 0x$mac_hex";
+}
+
+sub _xnba_user_context {
+    my ($node) = @_;
+
+    return {
+        'xcat-purpose' => 'xnba-second-stage',
+        'xcat-node'    => $node->{node},
+        'xcat-mac'     => lc( $node->{mac} ),
+    };
 }
 
 1;

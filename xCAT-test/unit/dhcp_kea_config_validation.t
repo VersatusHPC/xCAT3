@@ -28,13 +28,13 @@ my $json = $backend->render_dhcp4_config(
         ],
         'client-classes' => [
             {
-                name             => 'xcat-xnba-bios',
-                test             => "option[77].text == 'xNBA' and option[93].hex == 0x0000",
-                'boot-file-name' => 'xcat/xnba.kpxe',
+                name             => 'xcat-xnba-node01-525400123456-bios',
+                test             => "(option[77].exists and (option[77].text == 'xNBA' or option[77].hex == 0x784e4241 or substring(option[77].hex,1,4) == 'xNBA')) and option[93].hex == 0x0000 and pkt4.mac == 0x525400123456",
+                'boot-file-name' => 'http://192.168.122.1:80/tftpboot/xcat/xnba/nodes/node01',
             },
             {
                 name             => 'xcat-uefi-x64',
-                test             => 'option[93].hex == 0x0007 or option[93].hex == 0x0009',
+                test             => "(option[93].hex == 0x0007 or option[93].hex == 0x0009) and not ((option[77].exists and (option[77].text == 'xNBA' or option[77].hex == 0x784e4241 or substring(option[77].hex,1,4) == 'xNBA')))",
                 'boot-file-name' => 'xcat/xnba.efi',
             },
         ],

@@ -208,7 +208,7 @@ sub load_dhcp4_config {
     my $content = <$fh>;
     close($fh);
 
-    my $json = eval { decode_json($content) };
+    my $json = eval { decode_json( _strip_json_comments($content) ) };
     return { error => "Unable to parse $path as JSON: $@" } if $@;
 
     $json->{Dhcp4}{subnet4} ||= [];
@@ -226,7 +226,7 @@ sub load_dhcp6_config {
     my $content = <$fh>;
     close($fh);
 
-    my $json = eval { decode_json($content) };
+    my $json = eval { decode_json( _strip_json_comments($content) ) };
     return { error => "Unable to parse $path as JSON: $@" } if $@;
 
     $json->{Dhcp6}{subnet6} ||= [];
@@ -322,6 +322,59 @@ sub _write_json_file {
 sub encode_config {
     my ( $self, $config ) = @_;
     return JSON->new->canonical->pretty->encode($config);
+}
+
+sub _strip_json_comments {
+    my ($content) = @_;
+
+    my $out = '';
+    my $in_string = 0;
+    my $escaped = 0;
+    my $length = length($content);
+
+    for ( my $idx = 0; $idx < $length; $idx++ ) {
+        my $char = substr( $content, $idx, 1 );
+        my $next = $idx + 1 < $length ? substr( $content, $idx + 1, 1 ) : '';
+
+        if ($in_string) {
+            $out .= $char;
+            if ($escaped) {
+                $escaped = 0;
+            } elsif ($char eq '\\') {
+                $escaped = 1;
+            } elsif ($char eq '"') {
+                $in_string = 0;
+            }
+            next;
+        }
+
+        if ($char eq '"') {
+            $in_string = 1;
+            $out .= $char;
+            next;
+        }
+
+        if ($char eq '/' && $next eq '/') {
+            $idx += 2;
+            $idx++ while $idx < $length && substr( $content, $idx, 1 ) !~ /\n/;
+            $out .= "\n" if $idx < $length;
+            next;
+        }
+
+        if ($char eq '/' && $next eq '*') {
+            $idx += 2;
+            while ( $idx < $length - 1 && substr( $content, $idx, 2 ) ne '*/' ) {
+                $out .= "\n" if substr( $content, $idx, 1 ) eq "\n";
+                $idx++;
+            }
+            $idx++ if $idx < $length;
+            next;
+        }
+
+        $out .= $char;
+    }
+
+    return $out;
 }
 
 sub write_ctrl_agent_config {

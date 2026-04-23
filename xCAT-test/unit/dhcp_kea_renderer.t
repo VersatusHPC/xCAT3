@@ -118,6 +118,29 @@ my $empty_boot_subnet = decode_json($empty_boot_json)->{Dhcp4}{subnet4}[0];
 is( $empty_boot_subnet->{'next-server'}, '0.0.0.0', 'false-looking next-server value is preserved' );
 is( $empty_boot_subnet->{'boot-file-name'}, '', 'empty boot-file-name is preserved' );
 
+my $comment_dir = tempdir(CLEANUP => 1);
+my $commented_config = "$comment_dir/kea-dhcp4.conf";
+open( my $comment_fh, '>', $commented_config ) or die "Unable to write $commented_config: $!";
+print {$comment_fh} <<'COMMENTED_JSON';
+// Packaged Kea configs may contain comments before xCAT rewrites them.
+{
+  "Dhcp4": {
+    "valid-lifetime": 600,
+    "subnet4": [
+      {
+        "id": 1,
+        "subnet": "10.20.0.0/24",
+        "pools": [] // Keep URLs such as "http://server/path" intact.
+      }
+    ]
+  }
+}
+COMMENTED_JSON
+close($comment_fh);
+my $loaded_commented = $backend->load_dhcp4_config($commented_config);
+ok( !$loaded_commented->{error}, 'Kea DHCPv4 loader accepts packaged JSON comments' );
+is( $loaded_commented->{Dhcp4}{subnet4}[0]{subnet}, '10.20.0.0/24', 'commented Kea config is decoded' );
+
 my $reservation_config = decode_json(
     $backend->render_dhcp4_config(
         {

@@ -2291,14 +2291,17 @@ sub kea_process_request
     my @deleted6;
     my $reservations4 = [];
     my $reservations6 = [];
+    my $client_classes_changed = 0;
     if ($opt->{d}) {
         foreach my $match (@{ kea_reservation_matches_for_nodes($nodes) }) {
             push @deleted4, @{ $backend->delete_reservations($loaded4, $match) };
             push @deleted6, @{ $backend->delete_reservations($loaded6, $match) } if $loaded6;
         }
+        $client_classes_changed = kea_remove_xnba_client_classes($loaded4, $nodes);
     } else {
         $reservations4 = kea_build_node_reservations($backend, $loaded4, $nodes);
         $backend->upsert_reservations($loaded4, $reservations4);
+        $client_classes_changed = kea_sync_xnba_client_classes($loaded4, $nodes);
         if ($loaded6) {
             $reservations6 = kea_build_node_reservations6($backend, $loaded6, $nodes);
             $backend->upsert_reservations($loaded6, $reservations6);
@@ -2338,7 +2341,7 @@ sub kea_process_request
         }
     }
 
-    unless ($live_ok) {
+    unless ($live_ok && !$client_classes_changed) {
         my $restart = $backend->restart_services(ipv6 => $using_dhcp6, ctrl_agent => kea_control_agent_enabled(), ddns => $using_ddns);
         if ($restart->{error}) {
             $callback->({ error => [ $restart->{error} ], errorcode => [1] });
@@ -2915,6 +2918,104 @@ sub kea_node_reservations
     }
 
     return \@reservations;
+}
+
+sub kea_sync_xnba_client_classes
+{
+    my ( $config, $nodes ) = @_;
+
+    my $changed = kea_remove_xnba_client_classes($config, $nodes);
+    my $classes = kea_xnba_client_classes_for_nodes($nodes);
+    return $changed unless @$classes;
+
+    $config->{Dhcp4} ||= {};
+    my @existing = @{ $config->{Dhcp4}{'client-classes'} || [] };
+    $config->{Dhcp4}{'client-classes'} = [ @$classes, @existing ];
+
+    return 1;
+}
+
+sub kea_remove_xnba_client_classes
+{
+    my ( $config, $nodes ) = @_;
+
+    return 0 unless $config && $config->{Dhcp4};
+    my $classes = $config->{Dhcp4}{'client-classes'} || [];
+    my %nodes = map { $_ => 1 } @$nodes;
+    my @kept;
+    my $changed = 0;
+
+    foreach my $class (@$classes) {
+        my $context = $class->{'user-context'} || {};
+        if ( ( $context->{'xcat-purpose'} || '' ) eq 'xnba-second-stage' && $nodes{ $context->{'xcat-node'} || '' } ) {
+            $changed = 1;
+            next;
+        }
+        push @kept, $class;
+    }
+
+    $config->{Dhcp4}{'client-classes'} = \@kept if $changed;
+    return $changed;
+}
+
+sub kea_xnba_client_classes_for_nodes
+{
+    my ($nodes) = @_;
+
+    my $nrtab = xCAT::Table->new('noderes');
+    my $mactab = xCAT::Table->new('mac');
+    return [] unless $nrtab && $mactab;
+
+    my $nrents = $nrtab->getNodesAttribs($nodes, [ 'tftpserver', 'netboot', 'proxydhcp', 'xcatmaster', 'servicenode' ]);
+    my $macents = $mactab->getNodesAttribs($nodes, ['mac']);
+    my $httpport = "80";
+    my @hports = xCAT::TableUtils->get_site_attribute("httpport");
+    if ($hports[0]) {
+        $httpport = $hports[0];
+    }
+
+    my @records;
+    foreach my $node (@$nodes) {
+        my $nrent = $nrents && $nrents->{$node} ? $nrents->{$node}->[0] : undef;
+        next unless $nrent && $nrent->{netboot} && $nrent->{netboot} eq 'xnba';
+
+        my $macent = $macents && $macents->{$node} ? $macents->{$node}->[0] : undef;
+        next unless $macent && $macent->{mac};
+
+        my ( $nxtsrv ) = kea_next_server_for_node($node, $nrent);
+        next unless $nxtsrv;
+
+        foreach my $mace (split(/\|/, $macent->{mac})) {
+            my ($mac) = split(/!/, $mace);
+            $mac = kea_normalize_mac($mac);
+            next unless $mac;
+            push @records, {
+                node        => $node,
+                mac         => $mac,
+                next_server => $nxtsrv,
+                httpport    => $httpport,
+            };
+        }
+    }
+
+    return xCAT::DHCP::BootPolicy->kea_xnba_node_classes(
+        nodes    => \@records,
+        xnba_efi => -f "$tftpdir/xcat/xnba.efi" ? 1 : 0,
+    );
+}
+
+sub kea_normalize_mac
+{
+    my ($mac) = @_;
+
+    return unless $mac;
+    return unless $mac =~ /^[0-9a-fA-F]{2}(-[0-9a-fA-F]{2}){5,8}$|^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5,8}$/;
+    if (index($mac, ':') == -1) {
+        $mac = lc($mac);
+        $mac =~ s/(\w{2})/$1:/g;
+        $mac =~ s/:$//;
+    }
+    return lc($mac);
 }
 
 sub kea_node_reservations6
