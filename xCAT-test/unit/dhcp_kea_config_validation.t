@@ -33,10 +33,10 @@ my $json = $backend->render_dhcp4_config(
                 'boot-file-name' => 'http://192.168.122.1:80/tftpboot/xcat/xnba/nodes/node01',
             },
             {
-                name               => 'xcat-opal-v3-192.168.122.0-24',
-                test               => 'option[93].hex == 0x000e',
-                'only-if-required' => JSON::true,
-                'option-data'      => [
+                name            => 'xcat-opal-v3-192.168.122.0-24',
+                test            => 'option[93].hex == 0x000e',
+                additional_only => JSON::true,
+                'option-data'   => [
                     { name => 'conf-file', data => 'http://192.168.122.1:80/tftpboot/pxelinux.cfg/p/192.168.122.0_24' },
                 ],
             },
@@ -64,7 +64,7 @@ my $json = $backend->render_dhcp4_config(
                 subnet       => '192.168.122.0/24',
                 dynamicrange => '192.168.122.100-192.168.122.120',
                 next_server  => '192.168.122.1',
-                'require-client-classes' => ['xcat-opal-v3-192.168.122.0-24'],
+                additional_client_classes => ['xcat-opal-v3-192.168.122.0-24'],
                 option_data  => [
                     { name => 'routers',             data => '192.168.122.1' },
                     { name => 'domain-name',         data => 'cluster.test' },

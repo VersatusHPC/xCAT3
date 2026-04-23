@@ -2777,7 +2777,7 @@ sub kea_subnet4_intent
     );
     $subnet{interface} = $interface unless $remote;
     if ($opal_class) {
-        $subnet{'require-client-classes'} = [ $opal_class->{name} ];
+        $subnet{additional_client_classes} = [ $opal_class->{name} ];
         $subnet{client_classes} = [$opal_class];
     }
 
@@ -2794,10 +2794,10 @@ sub kea_opal_client_class
     $class_name =~ s/[^A-Za-z0-9_.-]/_/g;
 
     return {
-        name               => $class_name,
-        test               => 'option[93].hex == 0x000e',
-        'only-if-required' => JSON::true,
-        'option-data'      => [
+        name            => $class_name,
+        test            => 'option[93].hex == 0x000e',
+        additional_only => JSON::true,
+        'option-data'   => [
             {
                 name => 'conf-file',
                 data => "http://$tftp:$httpport/tftpboot/pxelinux.cfg/p/" . $net . "_" . $prefix,

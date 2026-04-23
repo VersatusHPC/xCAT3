@@ -62,10 +62,10 @@ sub render_dhcp4_config {
 
     $dhcp4{'control-socket'}  = $intent->{'control-socket'}  if $intent->{'control-socket'};
     $dhcp4{'hooks-libraries'} = $intent->{'hooks-libraries'} if $intent->{'hooks-libraries'};
-    $dhcp4{'option-def'}     = $intent->{'option-def'}     if $intent->{'option-def'};
-    $dhcp4{'client-classes'} = $intent->{'client-classes'} if $intent->{'client-classes'};
-    $dhcp4{'option-data'}    = $intent->{'option-data'}    if $intent->{'option-data'};
-    $dhcp4{'dhcp-ddns'}      = $intent->{'dhcp-ddns'}      if $intent->{'dhcp-ddns'};
+    $dhcp4{'option-def'} = $intent->{'option-def'} if $intent->{'option-def'};
+    $dhcp4{'client-classes'} = [ map { $self->_render_client_class($_) } @{ $intent->{'client-classes'} } ] if $intent->{'client-classes'};
+    $dhcp4{'option-data'}    = $intent->{'option-data'} if $intent->{'option-data'};
+    $dhcp4{'dhcp-ddns'}      = $intent->{'dhcp-ddns'}   if $intent->{'dhcp-ddns'};
     foreach my $field (qw/ddns-send-updates ddns-override-no-update ddns-override-client-update ddns-qualifying-suffix ddns-update-on-renew/) {
         $dhcp4{$field} = $intent->{$field} if exists $intent->{$field};
     }
@@ -659,13 +659,19 @@ sub _render_subnet4 {
     $rendered{interface}        = $subnet->{interface} if defined $subnet->{interface};
     $rendered{'next-server'}    = _first_defined( $subnet->{'next-server'},    $subnet->{next_server} );
     $rendered{'boot-file-name'} = _first_defined( $subnet->{'boot-file-name'}, $subnet->{boot_file_name} );
-    $rendered{'option-data'}    = _first_defined( $subnet->{'option-data'},    $subnet->{option_data} );
-    $rendered{'require-client-classes'} = _first_defined( $subnet->{'require-client-classes'}, $subnet->{require_client_classes} );
-    $rendered{reservations}     = $subnet->{reservations} if $subnet->{reservations};
+    $rendered{'option-data'} = _first_defined( $subnet->{'option-data'}, $subnet->{option_data} );
+    my $additional_classes = _first_defined(
+        $subnet->{additional_client_classes},
+        $subnet->{'evaluate-additional-classes'},
+        $subnet->{evaluate_additional_classes},
+        $subnet->{'require-client-classes'},
+        $subnet->{require_client_classes},
+    );
+    $rendered{ $self->_additional_class_list_field() } = $additional_classes if defined $additional_classes;
+    $rendered{reservations} = $subnet->{reservations} if $subnet->{reservations};
     delete $rendered{'next-server'}    unless defined $rendered{'next-server'};
     delete $rendered{'boot-file-name'} unless defined $rendered{'boot-file-name'};
     delete $rendered{'option-data'}    unless defined $rendered{'option-data'};
-    delete $rendered{'require-client-classes'} unless defined $rendered{'require-client-classes'};
 
     if ( $subnet->{pools} ) {
         $rendered{pools} = $subnet->{pools};
@@ -674,6 +680,26 @@ sub _render_subnet4 {
     } else {
         $rendered{pools} = [];
     }
+
+    return \%rendered;
+}
+
+sub _render_client_class {
+    my ( $self, $client_class ) = @_;
+
+    my %rendered = %$client_class;
+    my $additional_only = _first_defined(
+        $client_class->{additional_only},
+        $client_class->{'only-in-additional-list'},
+        $client_class->{only_in_additional_list},
+        $client_class->{'only-if-required'},
+        $client_class->{only_if_required},
+    );
+
+    delete @rendered{qw/additional_only only_in_additional_list only_if_required/};
+    delete $rendered{'only-in-additional-list'};
+    delete $rendered{'only-if-required'};
+    $rendered{ $self->_additional_class_flag_field() } = $additional_only if defined $additional_only;
 
     return \%rendered;
 }
@@ -761,6 +787,51 @@ sub _control_agent_not_found {
     return 0;
 }
 
+sub _additional_class_flag_field {
+    my ($self) = @_;
+
+    return $self->_use_modern_additional_class_syntax() ? 'only-in-additional-list' : 'only-if-required';
+}
+
+sub _additional_class_list_field {
+    my ($self) = @_;
+
+    return $self->_use_modern_additional_class_syntax() ? 'evaluate-additional-classes' : 'require-client-classes';
+}
+
+sub _use_modern_additional_class_syntax {
+    my ($self) = @_;
+
+    return 1 if $self->{additional_class_syntax} && $self->{additional_class_syntax} eq 'modern';
+    return 0 if $self->{additional_class_syntax} && $self->{additional_class_syntax} eq 'legacy';
+
+    my $version = $self->kea_version();
+    return _version_at_least( $version, '2.7.4' );
+}
+
+sub kea_version {
+    my ($self) = @_;
+
+    return $self->{kea_version} if defined $self->{kea_version};
+    return $self->{_detected_kea_version} if defined $self->{_detected_kea_version};
+
+    my $command = $self->{kea_dhcp4_command} || _command_path('kea-dhcp4');
+    return unless $command;
+
+    my $output = '';
+    if ( open( my $version_fh, '-|', $command, '-V' ) ) {
+        local $/;
+        $output = <$version_fh> || '';
+        close($version_fh);
+    }
+
+    if ( $output =~ /(\d+(?:\.\d+){1,2})/ ) {
+        $self->{_detected_kea_version} = $1;
+    }
+
+    return $self->{_detected_kea_version};
+}
+
 sub _first_defined {
     my @values = @_;
     foreach my $value (@values) {
@@ -768,6 +839,25 @@ sub _first_defined {
     }
 
     return;
+}
+
+sub _version_at_least {
+    my ( $version, $minimum ) = @_;
+
+    return 0 unless defined($version) && $version =~ /^\d+(?:\.\d+)*/;
+
+    my @version_parts = split /\./, $version;
+    my @minimum_parts = split /\./, $minimum;
+    my $max = @version_parts > @minimum_parts ? @version_parts : @minimum_parts;
+
+    for my $idx ( 0 .. $max - 1 ) {
+        my $left  = $version_parts[$idx]  || 0;
+        my $right = $minimum_parts[$idx] || 0;
+        return 1 if $left > $right;
+        return 0 if $left < $right;
+    }
+
+    return 1;
 }
 
 sub _integer {

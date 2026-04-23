@@ -10,7 +10,7 @@ use Test::More;
 
 use xCAT::DHCP::Backend::Kea;
 
-my $backend = xCAT::DHCP::Backend::Kea->new();
+my $backend = xCAT::DHCP::Backend::Kea->new( kea_version => '2.4.1' );
 my $json = $backend->render_dhcp4_config(
     {
         interfaces     => ['eth0'],
@@ -22,7 +22,7 @@ my $json = $backend->render_dhcp4_config(
                 interface    => 'eth0',
                 dynamicrange => '10.0.0.100-10.0.0.120;10.0.0.130,10.0.0.140',
                 next_server  => '10.0.0.1',
-                'require-client-classes' => ['xcat-opal-v3-10.0.0.0-24'],
+                additional_client_classes => ['xcat-opal-v3-10.0.0.0-24'],
                 option_data  => [
                     { name => 'routers',             data => '10.0.0.1' },
                     { name => 'domain-name-servers', data => '10.0.0.2, 10.0.0.3' },
@@ -44,10 +44,10 @@ my $json = $backend->render_dhcp4_config(
                 'boot-file-name' => 'xcat/xnba.efi',
             },
             {
-                name               => 'xcat-opal-v3-10.0.0.0-24',
-                test               => 'option[93].hex == 0x000e',
-                'only-if-required' => JSON::true,
-                'option-data'      => [
+                name            => 'xcat-opal-v3-10.0.0.0-24',
+                test            => 'option[93].hex == 0x000e',
+                additional_only => JSON::true,
+                'option-data'   => [
                     { name => 'conf-file', data => 'http://10.0.0.1/tftpboot/pxelinux.cfg/p/10.0.0.0_24' },
                 ],
             },
@@ -122,6 +122,38 @@ is_deeply(
     ],
     'client classes are preserved, including subnet-specific OPAL conf-file class'
 );
+
+my $modern_backend = xCAT::DHCP::Backend::Kea->new( kea_version => '3.0.1' );
+my $modern_json = $modern_backend->render_dhcp4_config(
+    {
+        subnets => [
+            {
+                id                        => 3,
+                subnet                    => '10.0.2.0/24',
+                pools                     => [],
+                additional_client_classes => ['xcat-opal-v3-10.0.2.0-24'],
+            },
+        ],
+        'client-classes' => [
+            {
+                name            => 'xcat-opal-v3-10.0.2.0-24',
+                test            => 'option[93].hex == 0x000e',
+                additional_only => JSON::true,
+            },
+        ],
+    }
+);
+my $modern_config = decode_json($modern_json);
+my $modern_subnet = $modern_config->{Dhcp4}{subnet4}[0];
+my $modern_class  = $modern_config->{Dhcp4}{'client-classes'}[0];
+is_deeply(
+    $modern_subnet->{'evaluate-additional-classes'},
+    ['xcat-opal-v3-10.0.2.0-24'],
+    'Kea 3.x renders modern subnet additional-class evaluation field'
+);
+ok( !exists $modern_subnet->{'require-client-classes'}, 'Kea 3.x output omits deprecated subnet additional-class field' );
+is( $modern_class->{'only-in-additional-list'}, JSON::true, 'Kea 3.x renders modern class additional-evaluation flag' );
+ok( !exists $modern_class->{'only-if-required'}, 'Kea 3.x output omits deprecated class additional-evaluation flag' );
 
 my $empty_boot_json = $backend->render_dhcp4_config(
     {
