@@ -2388,6 +2388,7 @@ sub kea_build_dhcp4_intent
 
     my @routes = kea_ipv4_routes(@vnets);
     my @subnets;
+    my @opal_classes;
     my $id = 1;
     foreach my $route (@routes) {
         my ( $net, $netif, $mask, $flags ) = @$route;
@@ -2406,6 +2407,7 @@ sub kea_build_dhcp4_intent
 
         my $subnet = kea_subnet4_intent($nettab, $net, $mask, $interface, $remote, $id, $httpport);
         return $subnet if $subnet->{error};
+        push @opal_classes, @{ delete $subnet->{client_classes} || [] };
         push @subnets, $subnet;
         $id++;
     }
@@ -2416,7 +2418,7 @@ sub kea_build_dhcp4_intent
         valid_lifetime => kea_dhcp_lease_time(),
         'option-def'   => kea_option_defs(),
         'option-data'  => kea_global_option_data(),
-        'client-classes' => kea_boot_client_classes(),
+        'client-classes' => [ @{ kea_boot_client_classes() }, @opal_classes ],
         subnets        => \@subnets,
     };
 
@@ -2765,6 +2767,7 @@ sub kea_subnet4_intent
     push @option_data, { name => 'domain-search', data => $domainstring } if $domainstring;
 
     my $prefix = kea_mask_to_prefix($mask);
+    my $opal_class = kea_opal_client_class($net, $prefix, $tftp, $httpport);
     my %subnet = (
         id            => $id,
         subnet        => "$net/$prefix",
@@ -2773,8 +2776,34 @@ sub kea_subnet4_intent
         next_server   => $tftp,
     );
     $subnet{interface} = $interface unless $remote;
+    if ($opal_class) {
+        $subnet{'require-client-classes'} = [ $opal_class->{name} ];
+        $subnet{client_classes} = [$opal_class];
+    }
 
     return \%subnet;
+}
+
+sub kea_opal_client_class
+{
+    my ( $net, $prefix, $tftp, $httpport ) = @_;
+
+    return unless $net && defined($prefix) && $tftp;
+
+    my $class_name = "xcat-opal-v3-$net-$prefix";
+    $class_name =~ s/[^A-Za-z0-9_.-]/_/g;
+
+    return {
+        name               => $class_name,
+        test               => 'option[93].hex == 0x000e',
+        'only-if-required' => JSON::true,
+        'option-data'      => [
+            {
+                name => 'conf-file',
+                data => "http://$tftp:$httpport/tftpboot/pxelinux.cfg/p/" . $net . "_" . $prefix,
+            },
+        ],
+    };
 }
 
 sub kea_expand_request_nodes

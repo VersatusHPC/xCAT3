@@ -22,6 +22,7 @@ my $json = $backend->render_dhcp4_config(
                 interface    => 'eth0',
                 dynamicrange => '10.0.0.100-10.0.0.120;10.0.0.130,10.0.0.140',
                 next_server  => '10.0.0.1',
+                'require-client-classes' => ['xcat-opal-v3-10.0.0.0-24'],
                 option_data  => [
                     { name => 'routers',             data => '10.0.0.1' },
                     { name => 'domain-name-servers', data => '10.0.0.2, 10.0.0.3' },
@@ -41,6 +42,14 @@ my $json = $backend->render_dhcp4_config(
                 name             => 'xcat-uefi-x64',
                 test             => 'option[93].hex == 0x0007',
                 'boot-file-name' => 'xcat/xnba.efi',
+            },
+            {
+                name               => 'xcat-opal-v3-10.0.0.0-24',
+                test               => 'option[93].hex == 0x000e',
+                'only-if-required' => JSON::true,
+                'option-data'      => [
+                    { name => 'conf-file', data => 'http://10.0.0.1/tftpboot/pxelinux.cfg/p/10.0.0.0_24' },
+                ],
             },
         ],
     }
@@ -76,6 +85,11 @@ is_deeply(
     ],
     'subnet option-data is preserved'
 );
+is_deeply(
+    $subnet->{'require-client-classes'},
+    ['xcat-opal-v3-10.0.0.0-24'],
+    'subnet requests second-pass OPAL class evaluation for subnet-specific conf-file'
+);
 
 is_deeply(
     $subnet->{reservations},
@@ -97,8 +111,16 @@ is_deeply(
             test             => 'option[93].hex == 0x0007',
             'boot-file-name' => 'xcat/xnba.efi',
         },
+        {
+            name               => 'xcat-opal-v3-10.0.0.0-24',
+            test               => 'option[93].hex == 0x000e',
+            'only-if-required' => JSON::true,
+            'option-data'      => [
+                { name => 'conf-file', data => 'http://10.0.0.1/tftpboot/pxelinux.cfg/p/10.0.0.0_24' },
+            ],
+        },
     ],
-    'client classes are preserved'
+    'client classes are preserved, including subnet-specific OPAL conf-file class'
 );
 
 my $empty_boot_json = $backend->render_dhcp4_config(

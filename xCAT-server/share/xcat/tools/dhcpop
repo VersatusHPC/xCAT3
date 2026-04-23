@@ -19,6 +19,8 @@ sub usage{
     print "       dhcphelper -r|--rm -m|--mac <mac address> [ -a|--ip <ip address>] [ -n|--name <node name>]\n";
     print "       delete the dhcp lease of specified <mac>,<ip address> and <node name>\n";
     print "\n";
+
+    return;
 }
 
 my $help;
@@ -46,7 +48,7 @@ if($help){
         }
 
         mkdir "/tmp/xcat" unless -d "/tmp/xcat";
-        open(my $dhcplockfd, ">", "/tmp/xcat/dhcplock") or die "Unable to lock DHCP state: $!";
+        open(my $dhcplockfd, ">", "/tmp/xcat/dhcplock") or die "Unable to lock DHCP state: $!";    ## no critic (InputOutput::RequireBriefOpen)
         flock($dhcplockfd, LOCK_EX);
 
         my $config4 = $backend->load_dhcp4_config();
@@ -103,41 +105,38 @@ if($help){
         exit 1;
     }
 
-    my $omshell;
-    open($omshell, '|-', '/bin/sh', '-c', '/usr/bin/omshell >/dev/null')
-      or die "Unable to start omshell: $!";
-    print $omshell "key "
-      . $id . " \""
-      . $passwd . "\"\n";
-    print $omshell "connect\n";
+    my $omshell_commands = "key " . $id . " \"" . $passwd . "\"\n";
+    $omshell_commands .= "connect\n";
 
     if($hostname){
-        print $omshell "new host\n";
-        print $omshell
-          "set name = \"$hostname\"\n";    #Find and destroy conflict name
-        print $omshell "open\n";
-        print $omshell "remove\n";
-        print $omshell "close\n";
+        $omshell_commands .= "new host\n";
+        $omshell_commands .= "set name = \"$hostname\"\n";    #Find and destroy conflict name
+        $omshell_commands .= "open\n";
+        $omshell_commands .= "remove\n";
+        $omshell_commands .= "close\n";
     }
 
     if ($mac)
     {
-        print $omshell "new host\n";
-        print $omshell "set hardware-address = " . $mac
-          . "\n";                      #find and destroy mac conflict
-        print $omshell "open\n";
-        print $omshell "remove\n";
-        print $omshell "close\n";
+        $omshell_commands .= "new host\n";
+        $omshell_commands .= "set hardware-address = " . $mac . "\n";    #find and destroy mac conflict
+        $omshell_commands .= "open\n";
+        $omshell_commands .= "remove\n";
+        $omshell_commands .= "close\n";
     }
 
     if($ip){
-       print $omshell "new host\n";
-       print $omshell
-        "set ip-address = $ip\n";    #find and destroy ip conflict
-       print $omshell "open\n";
-       print $omshell "remove\n";
-       print $omshell "close\n";
+       $omshell_commands .= "new host\n";
+       $omshell_commands .= "set ip-address = $ip\n";    #find and destroy ip conflict
+       $omshell_commands .= "open\n";
+       $omshell_commands .= "remove\n";
+       $omshell_commands .= "close\n";
     }
+
+    my $omshell;
+    open($omshell, '|-', '/bin/sh', '-c', '/usr/bin/omshell >/dev/null')
+      or die "Unable to start omshell: $!";
+    print $omshell $omshell_commands;
     close($omshell);
 }else{
     &usage;

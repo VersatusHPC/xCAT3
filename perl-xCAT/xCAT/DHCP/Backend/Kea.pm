@@ -660,10 +660,12 @@ sub _render_subnet4 {
     $rendered{'next-server'}    = _first_defined( $subnet->{'next-server'},    $subnet->{next_server} );
     $rendered{'boot-file-name'} = _first_defined( $subnet->{'boot-file-name'}, $subnet->{boot_file_name} );
     $rendered{'option-data'}    = _first_defined( $subnet->{'option-data'},    $subnet->{option_data} );
+    $rendered{'require-client-classes'} = _first_defined( $subnet->{'require-client-classes'}, $subnet->{require_client_classes} );
     $rendered{reservations}     = $subnet->{reservations} if $subnet->{reservations};
     delete $rendered{'next-server'}    unless defined $rendered{'next-server'};
     delete $rendered{'boot-file-name'} unless defined $rendered{'boot-file-name'};
     delete $rendered{'option-data'}    unless defined $rendered{'option-data'};
+    delete $rendered{'require-client-classes'} unless defined $rendered{'require-client-classes'};
 
     if ( $subnet->{pools} ) {
         $rendered{pools} = $subnet->{pools};

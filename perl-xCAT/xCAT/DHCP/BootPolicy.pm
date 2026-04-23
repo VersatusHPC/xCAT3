@@ -37,7 +37,7 @@ sub kea_client_classes {
         },
         {
             name             => 'xcat-ppc64',
-            test             => '(option[93].hex == 0x000c or option[93].hex == 0x000e)',
+            test             => 'option[93].hex == 0x000c',
             'boot-file-name' => '/boot/grub2/grub2.ppc',
         },
         {

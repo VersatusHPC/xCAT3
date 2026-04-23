@@ -33,6 +33,14 @@ my $json = $backend->render_dhcp4_config(
                 'boot-file-name' => 'http://192.168.122.1:80/tftpboot/xcat/xnba/nodes/node01',
             },
             {
+                name               => 'xcat-opal-v3-192.168.122.0-24',
+                test               => 'option[93].hex == 0x000e',
+                'only-if-required' => JSON::true,
+                'option-data'      => [
+                    { name => 'conf-file', data => 'http://192.168.122.1:80/tftpboot/pxelinux.cfg/p/192.168.122.0_24' },
+                ],
+            },
+            {
                 name             => 'xcat-uefi-x64',
                 test             => "(option[93].hex == 0x0007 or option[93].hex == 0x0009) and not ((option[77].exists and (option[77].text == 'xNBA' or option[77].hex == 0x784e4241 or substring(option[77].hex,1,4) == 'xNBA')))",
                 'boot-file-name' => 'xcat/xnba.efi',
@@ -56,6 +64,7 @@ my $json = $backend->render_dhcp4_config(
                 subnet       => '192.168.122.0/24',
                 dynamicrange => '192.168.122.100-192.168.122.120',
                 next_server  => '192.168.122.1',
+                'require-client-classes' => ['xcat-opal-v3-192.168.122.0-24'],
                 option_data  => [
                     { name => 'routers',             data => '192.168.122.1' },
                     { name => 'domain-name',         data => 'cluster.test' },
