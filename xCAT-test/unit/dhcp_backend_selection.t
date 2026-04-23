@@ -26,9 +26,21 @@ is(
 );
 
 is(
+    xCAT::DHCP::Backend->default_backend( platform => 'el11', os => 'rhel11', os_name => 'rhel', version => 11 ),
+    'kea',
+    'EL releases newer than EL10 default to Kea by platform'
+);
+
+is(
     xCAT::DHCP::Backend->default_backend( platform => '', os => 'rocky10', os_name => 'rocky', version => 10 ),
     'kea',
     'EL10 derivatives default to Kea by osver'
+);
+
+is(
+    xCAT::DHCP::Backend->default_backend( platform => '', os => 'alma11', os_name => 'alma', version => 11 ),
+    'kea',
+    'EL derivatives newer than EL10 default to Kea by osver'
 );
 
 is(
@@ -47,6 +59,12 @@ is(
     xCAT::DHCP::Backend->default_backend( platform => '', os => 'ubuntu24.10', os_name => 'ubuntu', version => '24.10' ),
     'kea',
     'Ubuntu releases newer than 24.04 default to Kea'
+);
+
+is(
+    xCAT::DHCP::Backend->default_backend( platform => '', os => 'ubuntu26.04', os_name => 'ubuntu', version => '26.04' ),
+    'kea',
+    'Ubuntu LTS releases newer than 24.04 default to Kea'
 );
 
 is(

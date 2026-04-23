@@ -13,6 +13,7 @@ is( scalar @$fallback_classes, 4, 'Kea boot policy omits xNBA classes when xNBA 
 my %fallback_by_name = map { $_->{name} => $_ } @$fallback_classes;
 is( $fallback_by_name{'xcat-bios'}{'boot-file-name'}, 'pxelinux.0', 'BIOS clients fall back to pxelinux.0 without xNBA loaders' );
 ok( !exists $fallback_by_name{'xcat-xnba-bios'}, 'xNBA user-class is not advertised without xNBA kpxe' );
+like( $fallback_by_name{'xcat-ppc64'}{test}, qr/0x000e/, 'POWER class covers OPAL-v3 client architecture' );
 
 my $classes = xCAT::DHCP::BootPolicy->kea_client_classes(xnba_kpxe => 1, xnba_efi => 1);
 is( scalar @$classes, 5, 'Kea boot policy renders expected xNBA client classes' );
@@ -25,6 +26,8 @@ like( $by_name{'xcat-uefi-x64'}{test}, qr/0x0009/, 'UEFI x64 class matches archi
 like( $by_name{'xcat-uefi-x64'}{test}, qr/not \(\(option\[77\]\.exists/, 'generic UEFI class excludes xNBA second-stage clients' );
 is( $by_name{'xcat-aarch64'}{'boot-file-name'}, 'boot/grub2/grub2.aarch64', 'AArch64 clients receive grub2 boot file' );
 is( $by_name{'xcat-ppc64'}{'boot-file-name'}, '/boot/grub2/grub2.ppc', 'POWER clients receive grub2 Open Firmware boot file' );
+like( $by_name{'xcat-ppc64'}{test}, qr/0x000c/, 'POWER class matches existing POWER architecture id' );
+like( $by_name{'xcat-ppc64'}{test}, qr/0x000e/, 'POWER class matches OPAL-v3 architecture id' );
 
 my $xnba_classes = xCAT::DHCP::BootPolicy->kea_xnba_node_classes(
     xnba_efi => 1,

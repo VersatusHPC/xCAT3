@@ -48,10 +48,14 @@ sub default_backend {
     my ( $class, %args ) = @_;
 
     my $platform = exists $args{platform} ? $args{platform} : $class->_osver('platform');
-    return 'kea' if defined($platform) && $platform =~ /^el10\b/i;
+    if ( defined($platform) && $platform =~ /^el(\d+)\b/i ) {
+        return 'kea' if $1 >= 10;
+    }
 
     my $os = exists $args{os} ? $args{os} : $class->_osver();
-    return 'kea' if defined($os) && $os =~ /^(?:rhel|rhels|rocky|alma|centos|ol)10(?:\D|$)/i;
+    if ( defined($os) && $os =~ /^(?:rhel|rhels|rocky|alma|centos|ol)(\d+)(?:\D|$)/i ) {
+        return 'kea' if $1 >= 10;
+    }
 
     my $os_name = exists $args{os_name} ? $args{os_name} : $class->_osver('os');
     my $version = exists $args{version} ? $args{version} : $class->_osver('version');

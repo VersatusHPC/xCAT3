@@ -854,12 +854,10 @@ sub dhcp_dynamic_range_check {
     if ($kea_config) {
         $dhcpconfig = undef;
         my $config_json = eval {
-            require JSON;
-            open(my $fh, '<', $kea_config) or die $!;
-            local $/;
-            my $content = <$fh>;
-            close($fh);
-            JSON::decode_json($content);
+            require xCAT::DHCP::Backend::Kea;
+            my $loaded = xCAT::DHCP::Backend::Kea->new()->load_dhcp4_config($kea_config);
+            die $loaded->{error} if $loaded->{error};
+            $loaded;
         };
         if ($@) {
             probe_utils->send_msg("stdout", "f", $msg);

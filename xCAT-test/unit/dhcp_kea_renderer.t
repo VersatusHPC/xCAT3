@@ -120,8 +120,7 @@ is( $empty_boot_subnet->{'boot-file-name'}, '', 'empty boot-file-name is preserv
 
 my $comment_dir = tempdir(CLEANUP => 1);
 my $commented_config = "$comment_dir/kea-dhcp4.conf";
-open( my $comment_fh, '>', $commented_config ) or die "Unable to write $commented_config: $!";
-print {$comment_fh} <<'COMMENTED_JSON';
+my $commented_content = <<'COMMENTED_JSON';
 // Packaged Kea configs may contain comments before xCAT rewrites them.
 {
   "Dhcp4": {
@@ -136,6 +135,8 @@ print {$comment_fh} <<'COMMENTED_JSON';
   }
 }
 COMMENTED_JSON
+open( my $comment_fh, '>', $commented_config ) or die "Unable to write $commented_config: $!";
+print {$comment_fh} $commented_content;
 close($comment_fh);
 my $loaded_commented = $backend->load_dhcp4_config($commented_config);
 ok( !$loaded_commented->{error}, 'Kea DHCPv4 loader accepts packaged JSON comments' );
