@@ -22,6 +22,8 @@ B<makedhcp> B<[-h|--help]>
 
 The B<makedhcp> command creates and updates the DHCP configuration on the management node and service nodes.
 The B<makedhcp> command is supported for both Linux and AIX clusters.
+On Linux, the DHCP implementation is selected by the C<site.dhcpbackend> attribute.
+The C<auto> setting keeps ISC DHCP on platforms where it is still available and uses Kea DHCP on platforms such as EL10 and Ubuntu 24.04.
 
 =over 3
 
@@ -41,8 +43,8 @@ Also, get the hostnames and IP addresses pushed to /etc/hosts (using L<makehosts
 
 =item 4.
 
-Then run B<makedhcp> with a noderange or the B<-a> option.  This will inject into dhcpd configuration data pertinent to the specified nodes.
-On linux, the configuration information immediately takes effect without a restart of DHCP.
+Then run B<makedhcp> with a noderange or the B<-a> option.  This will inject DHCP configuration data pertinent to the specified nodes.
+With ISC DHCP, Linux node entries are updated through OMAPI. With Kea DHCP, node reservations are rendered into the Kea JSON configuration, validated, and the Kea service is restarted.
 
 =back
 
@@ -58,7 +60,8 @@ Create a new dhcp configuration file with a network statement for each network t
 (Which networks dhcpd should listen on can be controlled by the dhcpinterfaces attribute in the L<site(5)|site.5> table.)
 The B<makedhcp> command will automatically restart the dhcp daemon after this operation.
 This option will replace any existing configuration file (making a backup of it first).
-For Linux systems the file will include network entries as well as certain general parameters such as a dynamic range and omapi configuration.
+For Linux systems using ISC DHCP, the file will include network entries as well as certain general parameters such as a dynamic range and omapi configuration.
+For Linux systems using Kea DHCP, the generated files are /etc/kea/kea-dhcp4.conf, /etc/kea/kea-dhcp6.conf when IPv6 networks are configured, and /etc/kea/kea-dhcp-ddns.conf when DDNS is enabled.
 For AIX systems the file will include network entries.
 On AIX systems, if there are any non-xCAT entries in the existing configuration file they will be preserved and added to the end of the new configuration file.
 
@@ -75,6 +78,7 @@ Add the specified nodes to the DHCP server configuration.
 =item B<-s> I<statements>
 
 For the input noderange, the argument will be interpreted like dhcp configuration file text.
+This option is only supported by the ISC DHCP backend.
 
 =item B<-d> I<noderange>
 
@@ -150,7 +154,12 @@ DHCP configuration files:
 
 [RH]      /etc/dhcp/dhcpd.conf
 
+[Kea]     /etc/kea/kea-dhcp4.conf
+
+[Kea IPv6]     /etc/kea/kea-dhcp6.conf
+
+[Kea DDNS]     /etc/kea/kea-dhcp-ddns.conf
+
 =head1 SEE ALSO
 
 L<noderange(3)|noderange.3>
-

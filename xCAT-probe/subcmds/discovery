@@ -828,6 +828,10 @@ sub dhcp_dynamic_range_check {
     my $msg = "DHCP dynamic range is configured";
 
     my $dhcpconfig;
+    my $kea_config;
+    if (-e "/etc/kea/kea-dhcp4.conf") {
+        $kea_config = "/etc/kea/kea-dhcp4.conf";
+    }
     if (-e "/etc/dhcp/dhcpd.conf") {
         $dhcpconfig = "/etc/dhcp/dhcpd.conf";
     } elsif (-e "/etc/dhcp3/dhcpd.conf") {
@@ -836,9 +840,9 @@ sub dhcp_dynamic_range_check {
         $dhcpconfig = "/etc/dhcpd.conf";
     }
 
-    unless ($dhcpconfig) {
+    unless ($dhcpconfig || $kea_config) {
         probe_utils->send_msg("stdout", "f", $msg);
-        probe_utils->send_msg("stdout", "d", "Cannot find the dhcpd.conf file.");
+        probe_utils->send_msg("stdout", "d", "Cannot find the DHCP configuration file.");
         return 1;
     }
 
@@ -847,13 +851,40 @@ sub dhcp_dynamic_range_check {
     my @dynamic_range;
     my %subnet_hash;
 
-    unless (open(FILE, $dhcpconfig)) {
+    if ($kea_config) {
+        $dhcpconfig = undef;
+        my $config_json = eval {
+            require JSON;
+            open(my $fh, '<', $kea_config) or die $!;
+            local $/;
+            my $content = <$fh>;
+            close($fh);
+            JSON::decode_json($content);
+        };
+        if ($@) {
+            probe_utils->send_msg("stdout", "f", $msg);
+            probe_utils->send_msg("stdout", "d", "Cannot parse file $kea_config: $@");
+            return 1;
+        }
+        foreach my $subnet4 (@{ $config_json->{Dhcp4}{subnet4} || [] }) {
+            next unless $subnet4->{subnet} && $subnet4->{subnet} =~ m{^([^/]+)/(\d+)$};
+            my $mask = prefix_to_netmask($2);
+            my @ranges;
+            foreach my $pool (@{ $subnet4->{pools} || [] }) {
+                next unless $pool->{pool};
+                my $range = $pool->{pool};
+                $range =~ s/\s*-\s*/-/;
+                push @ranges, $range;
+            }
+            $subnet_hash{"$1/$mask"} = @ranges ? \@ranges : "unknown";
+        }
+    } elsif (!open(FILE, $dhcpconfig)) {
         probe_utils->send_msg("stdout", "f", $msg);
         probe_utils->send_msg("stdout", "d", "Cannot open file $dhcpconfig.");
         return 1;
     }
 
-    while ($config_line = <FILE>) {
+    while ($dhcpconfig && ($config_line = <FILE>)) {
         chomp($config_line);
         $config_line =~ s/^\s+|\s+$//g;
 
@@ -1005,6 +1036,17 @@ sub compare_ip_value {
     }
 
     return 0;
+}
+
+sub prefix_to_netmask {
+    my $prefix = shift;
+
+    my $mask_num = 0;
+    for my $idx (0 .. $prefix - 1) {
+        $mask_num |= (1 << (31 - $idx));
+    }
+
+    return join('.', map { ($mask_num >> (8 * (3 - $_))) & 0xff } 0 .. 3);
 }
 
 #------------------------------------------
@@ -1705,6 +1747,3 @@ sub conclusion_report {
 
     return 0;
 }
-
-
-

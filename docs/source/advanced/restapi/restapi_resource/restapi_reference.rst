@@ -1871,7 +1871,7 @@ Initialize the dns service. ::
 [URI:/services/dhcp] - The dhcp service resource.
 -------------------------------------------------
 
-POST - Create the dhcpd.conf for all the networks which are defined in the xCAT Management Node.
+POST - Create the DHCP server configuration for all the networks which are defined in the xCAT Management Node.
 ````````````````````````````````````````````````````````````````````````````````````````````````
 
 Refer to the man page: :doc:`makedhcp </guides/admin-guides/references/man8/makedhcp.8>`
@@ -1882,7 +1882,7 @@ Refer to the man page: :doc:`makedhcp </guides/admin-guides/references/man8/make
 
 **Example:**
 
-Create the dhcpd.conf and restart the dhcpd. ::
+Create the DHCP configuration and restart the selected DHCP service. ::
 
 
     curl -X POST -k 'https://127.0.0.1/xcatws/services/dhcp?userName=root&userPW=cluster&pretty=1'
@@ -2247,4 +2247,3 @@ Get attributes mgtifname and tftpserver from networks table for each row where n
           }
        ]
     }
-

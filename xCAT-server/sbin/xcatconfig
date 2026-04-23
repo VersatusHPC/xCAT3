@@ -23,6 +23,7 @@ BEGIN
 use lib "$::XCATROOT/lib/perl";
 use strict;
 use xCAT::Utils;
+use xCAT::DHCP::Backend;
 use xCAT::NetworkUtils;
 use Getopt::Long;
 use xCAT::MsgUtils;
@@ -489,9 +490,12 @@ if ($::INITIALINSTALL || $::FORCE)
         &makenetworks;
         &setuphttp;
 
-        # chkconfig dhcpd on
-        #system("chkconfig dhcpd on");
-        xCAT::Utils->enableservice("dhcp");
+        my $dhcpbackend = xCAT::DHCP::Backend->new_backend();
+        if (ref($dhcpbackend) ne 'HASH' && $dhcpbackend->name eq 'kea') {
+            xCAT::Utils->enableservice("kea-dhcp4");
+        } else {
+            xCAT::Utils->enableservice("dhcp");
+        }
 
         # Turn off selinux on RedHat
         if (-f "/etc/redhat-release")
@@ -575,7 +579,7 @@ if ($::INITIALINSTALL || $::FORCE)
 
 
         my $linux_note =
-"xCAT is now running, it is recommended to tabedit networks \nand set a dynamic ip address range on any networks where nodes \nare to be discovered. Then, run makedhcp -n to create a new dhcpd \nconfiguration file, and \/etc\/init.d\/dhcpd restart. Either examine sample \nconfiguration templates, or write your own, or specify a value per \nnode with nodeadd or tabedit.";
+"xCAT is now running, it is recommended to tabedit networks \nand set a dynamic ip address range on any networks where nodes \nare to be discovered. Then, run makedhcp -n to create a new DHCP \nconfiguration file, and restart the selected DHCP service. Either examine sample \nconfiguration templates, or write your own, or specify a value per \nnode with nodeadd or tabedit.";
         xCAT::MsgUtils->message('I', $linux_note);
 
     } else {    #AIX

@@ -493,7 +493,7 @@ sub obtain_log_content {
             } else {
                 $log_content{sender} = $split_line[1];
             }
-            if ($split_line[2] =~ /dhcpd/i) {
+            if ($split_line[2] =~ /dhcpd|kea-dhcp4/i) {
                 $log_content{label} = $::LOGLABEL_DHCPD;
             } elsif ($split_line[2] =~ /in.tftpd/i) {
                 $log_content{label} = $::LOGLABEL_TFTP;
@@ -521,7 +521,7 @@ sub obtain_log_content {
             } else {
                 $log_content{sender} = $split_line[3];
             }
-            if ($split_line[4] =~ /dhcpd/i) {
+            if ($split_line[4] =~ /dhcpd|kea-dhcp4/i) {
                 $log_content{label} = $::LOGLABEL_DHCPD;
             } elsif ($split_line[4] =~ /in.tftpd/i) {
                 $log_content{label} = $::LOGLABEL_TFTP;
@@ -728,4 +728,3 @@ sub debuglogger {
     }
 }
 1;
-

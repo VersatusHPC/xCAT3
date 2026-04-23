@@ -70,8 +70,13 @@ Requires: httpd nfs-utils nmap bind perl(CGI)
 # on RHEL7, need to specify it explicitly
 Requires: net-tools
 Requires: /usr/bin/killall
-# On RHEL this pulls in dhcp, on SLES it pulls in dhcp-server
+# On RHEL this pulls in dhcp, on SLES it pulls in dhcp-server. EL10 uses Kea.
+%if 0%{?rhel} >= 10
+Requires: kea
+Requires: kea-hooks
+%else
 Requires: /usr/sbin/dhcpd
+%endif
 # On RHEL this pulls in openssh-server, on SLES it pulls in openssh
 Requires: /usr/bin/ssh
 %if %nots390x

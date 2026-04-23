@@ -1067,10 +1067,10 @@ sub check_dhcp_service {
         chomp($checkdhcp);
         if ($checkdhcp) {
 
-            # on sn, just check dhcpd service whether running
-            my $dhcpoutput = `ps aux 2>&1| grep dhcpd |grep -v grep`;
+            # on sn, just check DHCP service whether running
+            my $dhcpoutput = `ps aux 2>&1| grep -E 'dhcpd|kea-dhcp4' |grep -v grep`;
             if (!$dhcpoutput) {
-                push @$error_ref, "There isn't 'dhcpd' daemon in current server";
+                push @$error_ref, "There isn't a DHCP daemon in current server";
                 $rst = 1;
             }
         } else {
@@ -1180,7 +1180,7 @@ sub check_dhcp_leases {
     my $error_ref = shift;
     my $rst = 0;
 
-    $$checkpoint_ref = "Checking dhcpd.leases file is less than 100M...";
+    $$checkpoint_ref = "Checking DHCP lease file is less than 100M...";
     @$error_ref = ();
 
     my $leasefile = "";
@@ -1190,6 +1190,8 @@ sub check_dhcp_leases {
         $leasefile = "/var/lib/dhcp/db/dhcpd.leases";
     } elsif (-e "/var/lib/dhcp/dhcpd.leases") {
         $leasefile = "/var/lib/dhcp/dhcpd.leases";
+    } elsif (-e "/var/lib/kea/kea-leases4.csv") {
+        $leasefile = "/var/lib/kea/kea-leases4.csv";
     }
 
     my @fileinfo = stat("$leasefile");
@@ -1487,7 +1489,6 @@ if ($hierarchy_instance->destory(\@error)) {
 $rst = summary_all_jobs_output();
 
 exit $rst;
-
 
 
 

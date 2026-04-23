@@ -14,6 +14,7 @@ use xCAT::Table;
 use xCAT::Utils;
 use xCAT::TableUtils;
 use xCAT::NetworkUtils;
+use xCAT::DHCP::Backend;
 
 use xCAT::MsgUtils;
 use xCAT_plugin::dhcp;
@@ -613,15 +614,11 @@ sub setup_DHCP
     my $rc = 0;
     my $cmd;
     my $snonly = 0;
+    my $dhcpbackend = xCAT::DHCP::Backend->new_backend();
+    my $dhcpservice = (ref($dhcpbackend) ne 'HASH' && $dhcpbackend->name eq 'kea') ? 'kea-dhcp4' : 'dhcp';
 
-    # if on the MN check to see if dhcpd is running, and start it if not.
+    # if on the MN check to see if DHCP is running, and start it if not.
     if (xCAT::Utils->isMN()) {    # on the MN
-            #my @output = xCAT::Utils->runcmd("service dhcpd status", -1);
-            #if ($::RUNCMD_RC != 0)  { # not running
-        my $dhcpservice = "dhcpd";
-        if (-e "/etc/init.d/isc-dhcp-server") {    #Ubuntu
-            $dhcpservice = "isc-dhcp-server";
-        }
         my $retcode = xCAT::Utils->checkservicestatus($dhcpservice);
         if ($retcode != 0) {
             $rc = xCAT::Utils->startservice($dhcpservice);
@@ -669,7 +666,7 @@ sub setup_DHCP
     if (xCAT::Utils->isAIX()) {
         $rc = xCAT::Utils->startService("dhcpd");
     } elsif (xCAT::Utils->isLinux()) {
-        $rc = xCAT::Utils->startservice("dhcp");
+        $rc = xCAT::Utils->startservice($dhcpservice);
     }
     if ($rc != 0)
     {

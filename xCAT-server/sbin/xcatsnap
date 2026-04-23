@@ -213,6 +213,9 @@ sub snap_it {
             "/etc/dhcp/dhcpd.conf",      "/etc/dhcp/dhcpd6.conf",
             "/etc/dhcpd6.conf",          "/var/lib/dhcp/db/dhcpd.leases",
             "/var/lib/dhcp/dhcpd.leases","/etc/goconserver/server.conf",
+            "/etc/kea/kea-dhcp4.conf",   "/etc/kea/kea-dhcp6.conf",
+            "/etc/kea/kea-ctrl-agent.conf", "/etc/kea/kea-dhcp-ddns.conf",
+            "/var/lib/kea/kea-leases4.csv", "/var/lib/kea/kea-leases6.csv",
             "/var/log/goconserver/*",    "/etc/logrotate.d/goconserver",
             "/etc/bind/named.conf");
         print("@files_array \n");

@@ -13,6 +13,7 @@ use xCAT::Table;
 
 #use Data::Dumper;
 use MIME::Base64;
+use JSON ();
 use Getopt::Long;
 Getopt::Long::Configure("bundling");
 Getopt::Long::Configure("pass_through");
@@ -24,6 +25,9 @@ my $candoipv6 = eval {
 use Sys::Syslog;
 use IPC::Open2;
 use xCAT::Utils;
+use xCAT::DHCP::BootPolicy;
+use xCAT::DHCP::Backend;
+use xCAT::DHCP::Range;
 use xCAT::TableUtils;
 use xCAT::NetworkUtils qw/getipaddr/;
 use xCAT::ServiceNodeUtils;
@@ -54,7 +58,6 @@ my $iscsients;
 my $nodetypeents;
 my $chainents;
 my $tftpdir = xCAT::TableUtils->getTftpDir();
-use Math::BigInt;
 my $dhcpconffile = $^O eq 'aix' ? '/etc/dhcpsd.cnf' : '/etc/dhcpd.conf';
 my %dynamicranges; #track dynamic ranges defined to see if a host that resolves is actually a dynamic address
 my %netcfgs;
@@ -845,9 +848,6 @@ sub addnode
 sub addrangedetection {
     my $net = shift;
     my $tranges = $net->{dynamicrange}; #temp range, the dollar sign makes it look strange
-    my $trange;
-    my $begin;
-    my $end;
     my $myip;
     my @myipd = xCAT::NetworkUtils->my_ip_facing($net->{net});
     unless ($myipd[0]) { $myip = $myipd[1]; }
@@ -876,40 +876,12 @@ sub addrangedetection {
             $netcfgs{ $net->{net} }->{nameservers} = $::XCATSITEVALS{nameservers};
         }
     }
-    foreach $trange (split /;/, $tranges) {
-        if ($trange =~ /[ ,-]/) {    #a range of one number to another..
-            $trange =~ s/[,-]/ /g;
-            $netcfgs{ $net->{net} }->{range} = $trange;
-            ($begin, $end) = split / /, $trange;
-            $dynamicranges{$trange} = [ getipaddr($begin, GetNumber => 1), getipaddr($end, GetNumber => 1) ];
-        } elsif ($trange =~ /\//) { #a CIDR style specification for a range that could be described in subnet rules
-             #we are going to assume that this is a subset of the network (it really ought to be) and therefore all zeroes or all ones is good to include
-            my $prefix;
-            my $suffix;
-            ($prefix, $suffix) = split /\//, $trange;
-            my $numbits;
-            if ($prefix =~ /:/) {    #ipv6
-                $netcfgs{ $net->{net} }->{range} = $trange; #we can put in dhcpv6 ranges verbatim as CIDR
-                $numbits = 128;
-            } else {
-                $numbits = 32;
-            }
-            my $number = getipaddr($prefix, GetNumber => 1);
-            my $highmask = Math::BigInt->new("0b" . ("1" x $suffix) . ("0" x ($numbits - $suffix)));
-            my $lowmask = Math::BigInt->new("0b" . ("1" x ($numbits - $suffix)));
-            $number &= $highmask;  #remove any errant high bits beyond the mask.
-            $begin = $number->copy();
-            $number |= $lowmask;    #get the highest number in the range,
-            $end = $number->copy();
-            $dynamicranges{$trange} = [ $begin, $end ];
+    foreach my $range_entry ( @{ xCAT::DHCP::Range->parse_dynamic_ranges($tranges) } ) {
+        my $isc_range = xCAT::DHCP::Range->isc_range($range_entry);
+        $netcfgs{ $net->{net} }->{range} = $isc_range;
 
-            if ($prefix !~ /:/) {    #ipv4, must convert CIDR subset to range
-                my $lowip  = inet_ntoa(pack("N*", $begin));
-                my $highip = inet_ntoa(pack("N*", $end));
-                $netcfgs{ $net->{net} }->{range} = "$lowip $highip";
-
-            }
-        }
+        my ( $begin_number, $end_number ) = xCAT::DHCP::Range->bounds($range_entry);
+        $dynamicranges{$isc_range} = [ $begin_number, $end_number ] if defined($begin_number) && defined($end_number);
     }
 }
 ######################################################
@@ -1388,6 +1360,20 @@ sub process_request
         return [];
     }
 
+    my $backend = xCAT::DHCP::Backend->new_backend(check_available => 1);
+    if ( ref($backend) eq 'HASH' && $backend->{error} ) {
+        my $rsp = {};
+        $rsp->{data}->[0] = $backend->{error};
+        xCAT::MsgUtils->message("E", $rsp, $callback, 1);
+        return;
+    }
+    if ( $backend->name eq 'kea' && $statements ) {
+        my $rsp = {};
+        $rsp->{data}->[0] = "The -s option contains ISC DHCP statement text and is not supported with the Kea DHCP backend.";
+        xCAT::MsgUtils->message("E", $rsp, $callback, 1);
+        return;
+    }
+
     # if current node is a servicenode, make sure that it is also a dhcpserver
     my $isok = 1;
     if (xCAT::Utils->isServiceNode()) {
@@ -1409,23 +1395,21 @@ sub process_request
         return;
     }
 
-    # if not -n,  dhcpd needs to be running
+    # if not -n,  dhcp service needs to be running
     if (!($opt{n})) {
         if (xCAT::Utils->isLinux()) {
-
-            #my $DHCPSERVER="dhcpd";
-            #if( -e "/etc/init.d/isc-dhcp-server" ){
-            #       $DHCPSERVER="isc-dhcp-server";
-            #}
-
-            #my @output = xCAT::Utils->runcmd("service $DHCPSERVER status", -1);
-            #if ($::RUNCMD_RC != 0)  { # not running
             my $ret = 0;
-            $ret = xCAT::Utils->checkservicestatus("dhcp");
-            if ($ret != 0)
-            {
+            my $service_error = "dhcp server is not running.  please start the dhcp server.";
+            if ( $backend->name eq 'kea' ) {
+                my $status = $backend->check_services();
+                $ret = $status->{error} ? 1 : 0;
+                $service_error = $status->{error} if $status->{error};
+            } else {
+                $ret = xCAT::Utils->checkservicestatus("dhcp");
+            }
+            if ($ret != 0) {
                 my $rsp = {};
-                $rsp->{data}->[0] = "dhcp server is not running.  please start the dhcp server.";
+                $rsp->{data}->[0] = $service_error;
                 xCAT::MsgUtils->message("E", $rsp, $callback, 1);
                 return;
             }
@@ -1453,6 +1437,11 @@ sub process_request
     # if option is query then call listnode for each node and return
     if ($opt{q})
     {
+        if ( $backend->name eq 'kea' ) {
+            kea_process_request($backend, $req, \%opt, {}, $verbose_on_off);
+            return;
+        }
+
         # call listnode for each node requested
         foreach my $node (@{ $req->{node} }) {
             listnode($node, $callback);
@@ -1558,6 +1547,11 @@ sub process_request
         }
 
         xCAT::MsgUtils->trace($verbose_on_off, "d", "dhcp: sitelogservers=$sitelogservers sitentpservers=$sitentpservers sitenameservers=$sitenameservers site_domain=$site_domain");
+    }
+
+    if ( $backend->name eq 'kea' ) {
+        kea_process_request($backend, $req, \%opt, \%activenics, $verbose_on_off);
+        return;
     }
 
     @dhcpconf  = ();
@@ -2150,6 +2144,1079 @@ sub process_request
     umask $oldmask;
 }
 
+sub kea_process_request
+{
+    my ( $backend, $req, $opt, $activenics, $verbose_on_off ) = @_;
+
+    if ($::XCATSITEVALS{externaldhcpservers}) {
+        xCAT::MsgUtils->trace($verbose_on_off, "d", "dhcp: remote dhcpservers configured, Kea backend has no local work");
+        return;
+    }
+
+    my $dhcplockfd;
+    mkdir "/tmp/xcat" unless -d "/tmp/xcat";
+    open($dhcplockfd, ">", "/tmp/xcat/dhcplock");
+    flock($dhcplockfd, LOCK_EX);
+
+    if ($opt->{q}) {
+        my $loaded4 = $backend->load_dhcp4_config();
+        if ($loaded4->{error}) {
+            $callback->({ error => [ $loaded4->{error} ], errorcode => [1] });
+            flock($dhcplockfd, LOCK_UN);
+            return;
+        }
+        my $loaded6 = $backend->load_dhcp6_config();
+        $loaded6 = undef if $loaded6->{error};
+        foreach my $node (@{ $req->{node} || [] }) {
+            kea_query_node($backend, $loaded4, $node);
+            kea_query_node($backend, $loaded6, $node) if $loaded6;
+        }
+        flock($dhcplockfd, LOCK_UN);
+        return;
+    }
+
+    my $intent4 = kea_build_dhcp4_intent($backend, $activenics);
+    if ($intent4->{error}) {
+        $callback->({ error => [ $intent4->{error} ], errorcode => [1] });
+        flock($dhcplockfd, LOCK_UN);
+        return;
+    }
+    my $intent6 = kea_build_dhcp6_intent($backend, $activenics);
+    if ($intent6->{error}) {
+        $callback->({ error => [ $intent6->{error} ], errorcode => [1] });
+        flock($dhcplockfd, LOCK_UN);
+        return;
+    }
+    my $using_dhcp6 = @{ $intent6->{subnets} || [] } ? 1 : 0;
+    my $ddns_intent = kea_build_ddns_intent();
+    my $using_ddns = $ddns_intent && !$ddns_intent->{error} ? 1 : 0;
+    if ($ddns_intent && $ddns_intent->{error}) {
+        $callback->({ error => [ $ddns_intent->{error} ], errorcode => [1] });
+        flock($dhcplockfd, LOCK_UN);
+        return;
+    }
+    if ($using_ddns) {
+        my $dhcp_ddns = kea_dhcp_ddns_section();
+        $intent4->{'dhcp-ddns'} = $dhcp_ddns;
+        kea_apply_ddns_behavior($intent4);
+        $intent6->{'dhcp-ddns'} = $dhcp_ddns if $using_dhcp6;
+        kea_apply_ddns_behavior($intent6) if $using_dhcp6;
+    }
+
+    if ($opt->{n}) {
+        my $result = $backend->write_dhcp4_config($intent4, backup_existing => 1);
+        if ($result->{error}) {
+            $callback->({ error => [ $result->{error} ], errorcode => [1] });
+            flock($dhcplockfd, LOCK_UN);
+            return;
+        }
+        if ($using_dhcp6) {
+            my $dhcp6_result = $backend->write_dhcp6_config($intent6, backup_existing => 1);
+            if ($dhcp6_result->{error}) {
+                $callback->({ error => [ $dhcp6_result->{error} ], errorcode => [1] });
+                flock($dhcplockfd, LOCK_UN);
+                return;
+            }
+        }
+        if ($using_ddns) {
+            my $ddns_result = $backend->write_ddns_config($ddns_intent, backup_existing => 1);
+            if ($ddns_result->{error}) {
+                $callback->({ error => [ $ddns_result->{error} ], errorcode => [1] });
+                flock($dhcplockfd, LOCK_UN);
+                return;
+            }
+        }
+        if (kea_control_agent_enabled()) {
+            my $ca_result = $backend->write_ctrl_agent_config({ dhcp6 => $using_dhcp6, ddns => $using_ddns });
+            if ($ca_result->{error}) {
+                $callback->({ error => [ $ca_result->{error} ], errorcode => [1] });
+                flock($dhcplockfd, LOCK_UN);
+                return;
+            }
+        }
+        my $restart = $backend->restart_services(ipv6 => $using_dhcp6, ctrl_agent => kea_control_agent_enabled(), ddns => $using_ddns, enable => 1);
+        if ($restart->{error}) {
+            $callback->({ error => [ $restart->{error} ], errorcode => [1] });
+        }
+        flock($dhcplockfd, LOCK_UN);
+        return;
+    }
+
+    my $loaded4 = $backend->load_dhcp4_config();
+    if ($loaded4->{error}) {
+        $callback->({ error => [ $loaded4->{error} ], errorcode => [1] });
+        flock($dhcplockfd, LOCK_UN);
+        return;
+    }
+    if (!@{ $loaded4->{Dhcp4}{subnet4} || [] }) {
+        my $result = $backend->write_dhcp4_config($intent4);
+        if ($result->{error}) {
+            $callback->({ error => [ $result->{error} ], errorcode => [1] });
+            flock($dhcplockfd, LOCK_UN);
+            return;
+        }
+        $loaded4 = $backend->load_dhcp4_config();
+    }
+    if ($loaded4->{error}) {
+        $callback->({ error => [ $loaded4->{error} ], errorcode => [1] });
+        flock($dhcplockfd, LOCK_UN);
+        return;
+    }
+    my $loaded6;
+    if ($using_dhcp6) {
+        $loaded6 = $backend->load_dhcp6_config();
+        if ($loaded6->{error}) {
+            $callback->({ error => [ $loaded6->{error} ], errorcode => [1] });
+            flock($dhcplockfd, LOCK_UN);
+            return;
+        }
+        if (!@{ $loaded6->{Dhcp6}{subnet6} || [] }) {
+            my $result = $backend->write_dhcp6_config($intent6);
+            if ($result->{error}) {
+                $callback->({ error => [ $result->{error} ], errorcode => [1] });
+                flock($dhcplockfd, LOCK_UN);
+                return;
+            }
+            $loaded6 = $backend->load_dhcp6_config();
+        }
+    }
+
+    my $nodes = kea_expand_request_nodes($req, $opt);
+    unless ($nodes) {
+        flock($dhcplockfd, LOCK_UN);
+        return;
+    }
+
+    my @deleted4;
+    my @deleted6;
+    my $reservations4 = [];
+    my $reservations6 = [];
+    if ($opt->{d}) {
+        foreach my $match (@{ kea_reservation_matches_for_nodes($nodes) }) {
+            push @deleted4, @{ $backend->delete_reservations($loaded4, $match) };
+            push @deleted6, @{ $backend->delete_reservations($loaded6, $match) } if $loaded6;
+        }
+    } else {
+        $reservations4 = kea_build_node_reservations($backend, $loaded4, $nodes);
+        $backend->upsert_reservations($loaded4, $reservations4);
+        if ($loaded6) {
+            $reservations6 = kea_build_node_reservations6($backend, $loaded6, $nodes);
+            $backend->upsert_reservations($loaded6, $reservations6);
+        }
+    }
+
+    my $result = $backend->write_dhcp4_json( $backend->encode_config($loaded4) );
+    if ($result->{error}) {
+        $callback->({ error => [ $result->{error} ], errorcode => [1] });
+        flock($dhcplockfd, LOCK_UN);
+        return;
+    }
+    if ($loaded6) {
+        my $dhcp6_result = $backend->write_dhcp6_json( $backend->encode_config($loaded6) );
+        if ($dhcp6_result->{error}) {
+            $callback->({ error => [ $dhcp6_result->{error} ], errorcode => [1] });
+            flock($dhcplockfd, LOCK_UN);
+            return;
+        }
+    }
+
+    my $live_ok = 0;
+    if (kea_control_agent_live_enabled($backend)) {
+        my $live4 = $opt->{d}
+          ? $backend->live_delete_reservations(\@deleted4, service => ['dhcp4'])
+          : $backend->live_upsert_reservations($reservations4, service => ['dhcp4']);
+        my $live6 = { ok => 1 };
+        if ($loaded6) {
+            $live6 = $opt->{d}
+              ? $backend->live_delete_reservations(\@deleted6, service => ['dhcp6'])
+              : $backend->live_upsert_reservations($reservations6, service => ['dhcp6']);
+        }
+        $live_ok = !$live4->{error} && !$live6->{error};
+        if (!$live_ok) {
+            my $why = $live4->{error} || $live6->{error};
+            $callback->({ warning => ["Kea Control Agent host update failed, restarting Kea services instead: $why"] });
+        }
+    }
+
+    unless ($live_ok) {
+        my $restart = $backend->restart_services(ipv6 => $using_dhcp6, ctrl_agent => kea_control_agent_enabled(), ddns => $using_ddns);
+        if ($restart->{error}) {
+            $callback->({ error => [ $restart->{error} ], errorcode => [1] });
+        }
+    }
+
+    flock($dhcplockfd, LOCK_UN);
+}
+
+sub kea_build_dhcp4_intent
+{
+    my ($backend, $activenics) = @_;
+
+    %dynamicranges = ();
+    %netcfgs       = ();
+    @alldomains    = ();
+
+    my @interfaces = grep { $_ ne '!remote!' && $_ !~ /!remote!/ } sort keys %$activenics;
+    @interfaces = ('*') unless @interfaces;
+
+    my $httpport = "80";
+    my @hports = xCAT::TableUtils->get_site_attribute("httpport");
+    if ($hports[0]) {
+        $httpport = $hports[0];
+    }
+
+    my $nettab = xCAT::Table->new("networks");
+    return { error => "Unable to open networks table, please run makenetworks" } unless $nettab;
+
+    my @vnets = $nettab->getAllAttribs('net', 'mgtifname', 'mask', 'dynamicrange', 'nameservers', 'ddnsdomain', 'domain');
+    my @doms  = $nettab->getAllAttribs('domain');
+    foreach my $netdom (@doms) {
+        if ($netdom->{domain}) {
+            push(@alldomains, $netdom->{domain}) unless grep(/^$netdom->{domain}$/, @alldomains);
+        }
+    }
+    if ($site_domain) {
+        push(@alldomains, $site_domain) unless grep(/^$site_domain$/, @alldomains);
+    }
+
+    foreach (@vnets) {
+        addrangedetection($_);
+    }
+
+    my @routes = kea_ipv4_routes(@vnets);
+    my @subnets;
+    my $id = 1;
+    foreach my $route (@routes) {
+        my ( $net, $netif, $mask, $flags ) = @$route;
+        next if kea_skip_ipv4_network($net);
+        next if defined($flags) && $flags =~ /G/;
+
+        my $interface = $netif;
+        my $remote = 0;
+        if ($interface =~ /!remote!\S*/) {
+            $remote = 1;
+            $interface =~ s/!remote!\s*(.*)$/$1/;
+            next unless $activenics->{'!remote!'};
+        } else {
+            next unless $activenics->{$interface};
+        }
+
+        my $subnet = kea_subnet4_intent($nettab, $net, $mask, $interface, $remote, $id, $httpport);
+        return $subnet if $subnet->{error};
+        push @subnets, $subnet;
+        $id++;
+    }
+    $nettab->close;
+
+    my $intent = {
+        interfaces     => \@interfaces,
+        valid_lifetime => kea_dhcp_lease_time(),
+        'option-def'   => kea_option_defs(),
+        'option-data'  => kea_global_option_data(),
+        'client-classes' => kea_boot_client_classes(),
+        subnets        => \@subnets,
+    };
+
+    if (kea_control_agent_enabled()) {
+        $intent->{'control-socket'} = {
+            'socket-type' => 'unix',
+            'socket-name' => '/var/run/kea/kea4-ctrl-socket',
+        };
+        my $hook = $backend->host_cmds_hook_path();
+        if ($hook) {
+            $intent->{'hooks-libraries'} = [ { library => $hook } ];
+        } else {
+            $callback->({ warning => ["Kea Control Agent was requested, but libdhcp_host_cmds.so was not found. Host reservations will use JSON render and reload."] });
+        }
+    }
+
+    return $intent;
+}
+
+sub kea_build_dhcp6_intent
+{
+    my ($backend, $activenics) = @_;
+
+    my @interfaces = grep { $_ ne '!remote!' && $_ !~ /!remote!/ } sort keys %$activenics;
+    @interfaces = ('*') unless @interfaces;
+
+    my $nettab = xCAT::Table->new("networks");
+    return { error => "Unable to open networks table, please run makenetworks" } unless $nettab;
+
+    my @vnets = $nettab->getAllAttribs('net', 'mgtifname', 'mask', 'dynamicrange', 'nameservers', 'ddnsdomain', 'domain');
+    my @subnets;
+    my $id = 10001;
+    foreach my $entry (@vnets) {
+        next unless $entry->{net} && $entry->{net} =~ /:/;
+        my $interface = $entry->{mgtifname} || '*';
+        my $remote = 0;
+        if ($interface =~ /!remote!\S*/) {
+            $remote = 1;
+            $interface =~ s/!remote!\s*(.*)$/$1/;
+            next if %$activenics && !$activenics->{'!remote!'};
+        } elsif (%$activenics && !$activenics->{$interface} && $interfaces[0] ne '*') {
+            next;
+        }
+
+        my $subnet = kea_subnet6_intent($entry, $interface, $remote, $id);
+        return $subnet if $subnet->{error};
+        push @subnets, $subnet;
+        $id++;
+    }
+    $nettab->close;
+
+    my $intent = {
+        interfaces           => \@interfaces,
+        preferred_lifetime   => kea_dhcp_lease_time(),
+        valid_lifetime       => kea_dhcp_lease_time(),
+        subnets              => \@subnets,
+    };
+
+    if (kea_control_agent_enabled()) {
+        $intent->{'control-socket'} = {
+            'socket-type' => 'unix',
+            'socket-name' => '/var/run/kea/kea6-ctrl-socket',
+        };
+        my $hook = $backend->host_cmds_hook_path();
+        if ($hook) {
+            $intent->{'hooks-libraries'} = [ { library => $hook } ];
+        }
+    }
+
+    return $intent;
+}
+
+sub kea_subnet6_intent
+{
+    my ( $entry, $interface, $remote, $id ) = @_;
+
+    my $net = $entry->{net};
+    my $prefix;
+    if ($net =~ m{^(.+)/(\d+)$}) {
+        $prefix = $2;
+    } elsif (defined $entry->{mask} && $entry->{mask} =~ /^(\d+)$/) {
+        $prefix = $1;
+        $net = "$net/$prefix";
+    } else {
+        return { error => "IPv6 network $net must include a prefix length for Kea DHCPv6." };
+    }
+
+    my $domain = $entry->{domain} || $site_domain;
+    my @option_data;
+    if ($domain) {
+        push @option_data, { name => 'domain-search', data => $domain };
+    }
+    my $nameservers = $entry->{nameservers} || $sitenameservers;
+    if ($nameservers && $nameservers =~ /:/) {
+        push @option_data, { name => 'dns-servers', data => $nameservers };
+    }
+
+    my %subnet = (
+        id           => $id,
+        subnet       => $net,
+        dynamicrange => $entry->{dynamicrange},
+        option_data  => \@option_data,
+    );
+    $subnet{interface} = $interface unless $remote || $interface eq '*';
+
+    return \%subnet;
+}
+
+sub kea_build_ddns_intent
+{
+    return unless kea_ddns_enabled();
+
+    my $nettab = xCAT::Table->new("networks");
+    return { error => "Unable to open networks table, please run makenetworks" } unless $nettab;
+
+    my @vnets = $nettab->getAllAttribs('net', 'mask', 'nameservers', 'ddnsdomain', 'domain');
+    $nettab->close;
+
+    my ( $key_algorithm, $key_secret ) = kea_ddns_key();
+    return { error => "Unable to find DDNS key material for Kea D2. Run makedns with dnshandler=ddns first." } unless $key_secret;
+
+    my @tsig_keys = (
+        {
+            name      => 'xcat_key',
+            algorithm => $key_algorithm,
+            secret    => $key_secret,
+        }
+    );
+
+    my ( %forward_seen, %reverse_seen, @forward, @reverse );
+    foreach my $entry (@vnets) {
+        my $dns = $entry->{nameservers} || $sitenameservers || '';
+        $dns =~ s/,.*//;
+        next unless $dns;
+
+        my $domain = $entry->{ddnsdomain} || $entry->{domain} || $site_domain;
+        if ($domain) {
+            $domain .= '.' unless $domain =~ /\.$/;
+            if (!$forward_seen{$domain}++) {
+                push @forward, kea_ddns_domain($domain, $dns);
+            }
+        }
+
+        my $zone_mask = $entry->{net} =~ /:/ ? undef : $entry->{mask};
+        foreach my $zone (getzonesfornet($entry->{net}, $zone_mask)) {
+            $zone .= '.' unless $zone =~ /\.$/;
+            if (!$reverse_seen{$zone}++) {
+                push @reverse, kea_ddns_domain($zone, $dns);
+            }
+        }
+    }
+
+    return {
+        'tsig-keys'     => \@tsig_keys,
+        forward_domains => \@forward,
+        reverse_domains => \@reverse,
+    };
+}
+
+sub kea_ddns_domain
+{
+    my ( $name, $server ) = @_;
+
+    return {
+        name          => $name,
+        'key-name'    => 'xcat_key',
+        'dns-servers' => [
+            {
+                'ip-address' => $server,
+                port         => 53,
+            }
+        ],
+    };
+}
+
+sub kea_dhcp_ddns_section
+{
+    return {
+        'enable-updates'       => JSON::true,
+        'server-ip'            => '127.0.0.1',
+        'server-port'          => 53001,
+        'ncr-protocol'         => 'UDP',
+        'ncr-format'           => 'JSON',
+    };
+}
+
+sub kea_apply_ddns_behavior
+{
+    my ($intent) = @_;
+
+    $intent->{'ddns-send-updates'} = JSON::true;
+    $intent->{'ddns-override-no-update'} = JSON::true;
+    $intent->{'ddns-override-client-update'} = JSON::true;
+    $intent->{'ddns-qualifying-suffix'} = $site_domain ? "$site_domain." : 'xcat.local.';
+    $intent->{'ddns-update-on-renew'} = JSON::true;
+}
+
+sub kea_ddns_enabled
+{
+    return defined($::XCATSITEVALS{dnshandler}) && $::XCATSITEVALS{dnshandler} =~ /ddns/ ? 1 : 0;
+}
+
+sub kea_ddns_key
+{
+    my $key_path = "/etc/xcat/ddns.key";
+    if (open(my $fh, '<', $key_path)) {
+        local $/;
+        my $contents = <$fh>;
+        close($fh);
+        my ($algorithm) = $contents =~ /algorithm\s+([A-Za-z0-9-]+)\s*;/;
+        my ($secret)    = $contents =~ /secret\s+"([^"]+)"/;
+        $algorithm ||= 'HMAC-SHA256';
+        $algorithm = uc($algorithm);
+        $algorithm =~ s/^HMAC-/HMAC-/;
+        return ($algorithm, $secret) if $secret;
+    }
+
+    my $passtab = xCAT::Table->new('passwd');
+    my $pent = $passtab ? $passtab->getAttribs({ key => 'omapi', username => 'xcat_key' }, ['password']) : undef;
+    return ('HMAC-SHA256', $pent->{password}) if $pent && $pent->{password};
+    return;
+}
+
+sub kea_ipv4_routes
+{
+    my @vnets = @_;
+    my @routes;
+
+    my $ipcmd = kea_command_path('ip');
+    if ($ipcmd) {
+        my @route_output = split /\n/, `$ipcmd -4 route show 2>/dev/null`;
+        foreach my $line (@route_output) {
+            if ($line =~ /^default\b/ && $line =~ /\bdev\s+(\S+)/) {
+                push @routes, [ '0.0.0.0', $1, '0.0.0.0', 'G' ];
+                next;
+            }
+            next unless $line =~ /^(\d+(?:\.\d+){3})\/(\d+)\b.*\bdev\s+(\S+)/;
+            push @routes, [ $1, $3, kea_prefix_to_mask($2), '' ];
+        }
+    } else {
+        my $netstat = kea_command_path('netstat');
+        if ($netstat) {
+            my @nsrnoutput = split /\n/, `$netstat -rn 2>/dev/null`;
+            splice @nsrnoutput, 0, 2;
+            foreach (@nsrnoutput) {
+                my @parts = split /\s+/;
+                next unless $parts[0] && $parts[2] && $parts[7];
+                push @routes, [ $parts[0], $parts[7], $parts[2], $parts[3] ];
+            }
+        }
+    }
+
+    foreach (@vnets) {
+        my $n  = $_->{net};
+        my $if = $_->{mgtifname};
+        my $nm = $_->{mask};
+        if ($if =~ /!remote!/ and $n !~ /:/) {
+            push @routes, [ $n, $if, $nm, '' ];
+        }
+    }
+
+    return @routes;
+}
+
+sub kea_command_path
+{
+    my ($command) = @_;
+
+    foreach my $dir (split /:/, $ENV{PATH} || '') {
+        next unless $dir;
+        my $path = "$dir/$command";
+        return $path if -x $path;
+    }
+
+    foreach my $path ( "/usr/sbin/$command", "/usr/bin/$command", "/sbin/$command", "/bin/$command" ) {
+        return $path if -x $path;
+    }
+
+    return;
+}
+
+sub kea_subnet4_intent
+{
+    my ( $nettab, $net, $mask, $interface, $remote, $id, $httpport ) = @_;
+
+    my @myipd = xCAT::NetworkUtils->my_ip_facing($net);
+    my $myip;
+    unless ($myipd[0]) { $myip = $myipd[1]; }
+
+    my ($ent) = $nettab->getAttribs(
+        { net => $net, mask => $mask },
+        qw(tftpserver nameservers ntpservers logservers gateway dynamicrange dhcpserver domain mtu)
+    );
+
+    my $ntpservers = $ent && $ent->{ntpservers} ? $ent->{ntpservers} : $sitentpservers;
+    my $logservers = $ent && $ent->{logservers} ? $ent->{logservers} : $sitelogservers;
+    my $domain     = $ent && $ent->{domain}     ? $ent->{domain}     : $site_domain;
+    return { error => "No domain defined for $net entry in networks table, and no domain defined in site table." } unless $domain;
+
+    my $nameservers;
+    if ($ent and $ent->{nameservers}) {
+        $nameservers = $ent->{nameservers};
+    } elsif ($sitenameservers) {
+        $nameservers = $sitenameservers;
+    }
+    $nameservers =~ s/<xcatmaster>/$myip/g if $nameservers;
+
+    if (!$ntpservers || ($ntpservers eq '<xcatmaster>')) {
+        $ntpservers = $myip;
+    }
+
+    $nameservers = putmyselffirst($nameservers) if $nameservers;
+    $ntpservers  = putmyselffirst($ntpservers)  if $ntpservers;
+    $logservers  = putmyselffirst($logservers)  if $logservers;
+
+    my $tftp = $ent && $ent->{tftpserver} ? $ent->{tftpserver} : undef;
+    if (!$tftp || ($tftp eq '<xcatmaster>')) {
+        $tftp = $myip;
+    }
+
+    my $gateway = $ent && $ent->{gateway} ? $ent->{gateway} : undef;
+    if ($gateway && $gateway eq '<xcatmaster>') {
+        $gateway = xCAT::NetworkUtils->ip_forwarding_enabled() ? $myip : '';
+    }
+    if ($gateway) {
+        my $maskn = unpack("N", inet_aton($mask));
+        my $netn  = unpack("N", inet_aton($net));
+        my $gaten = unpack("N", inet_aton($gateway));
+        if (($gaten & $maskn) != ($maskn & $netn)) {
+            return { error => "Specified gateway $gateway is not valid for $net/$mask, must be on same network" };
+        }
+    }
+
+    my @option_data;
+    push @option_data, { name => 'routers', data => $gateway } if $gateway;
+    push @option_data, { name => 'log-servers', data => $logservers || $myip } if $logservers || $myip;
+    push @option_data, { name => 'ntp-servers', data => $ntpservers } if $ntpservers;
+    if ($nameservers) {
+        push @option_data, { name => 'domain-name', data => $domain };
+        push @option_data, { name => 'domain-name-servers', data => $nameservers };
+    }
+    push @option_data, { name => 'interface-mtu', data => $ent->{mtu} } if $ent && $ent->{mtu};
+    push @option_data, { name => 'cumulus-provision-url', data => "http://$tftp:$httpport/install/postscripts/cumulusztp" } if $tftp;
+
+    my $domainstring = join(', ', map { $_ eq $domain ? $_ : $_ } grep { $_ } @alldomains);
+    push @option_data, { name => 'domain-search', data => $domainstring } if $domainstring;
+
+    my $prefix = kea_mask_to_prefix($mask);
+    my %subnet = (
+        id            => $id,
+        subnet        => "$net/$prefix",
+        dynamicrange  => $ent ? $ent->{dynamicrange} : undef,
+        option_data   => \@option_data,
+        next_server   => $tftp,
+    );
+    $subnet{interface} = $interface unless $remote;
+
+    return \%subnet;
+}
+
+sub kea_expand_request_nodes
+{
+    my ( $req, $opt ) = @_;
+
+    my @nodes;
+    if ($req->{node}) {
+        my $typehash = xCAT::DBobjUtils->getnodetype(\@{ $req->{node} });
+        foreach my $node (@{ $req->{node} }) {
+            my $ntype = $$typehash{$node};
+            if ($ntype =~ /^(cec|frame)$/) {
+                my $children = xCAT::DBobjUtils->getchildren($node);
+                push @nodes, @$children;
+            } else {
+                push @nodes, $node;
+            }
+        }
+        return \@nodes;
+    }
+
+    return unless $opt->{a};
+    if ($opt->{d}) {
+        my $nodelist = xCAT::Table->new('nodelist');
+        my @entries  = ($nodelist->getAllNodeAttribs([qw(node)]));
+        my @nodeentries = map { $_->{node} } @entries;
+        my $typehash = xCAT::DBobjUtils->getnodetype(\@nodeentries);
+        foreach (@entries) {
+            my $ntype = $$typehash{ $_->{node} };
+            push @nodes, $_->{node} unless $ntype =~ /^(cec|frame)$/;
+        }
+    } else {
+        my $mactab = xCAT::Table->new('mac');
+        my @entries = $mactab ? ($mactab->getAllNodeAttribs([qw(mac)])) : ();
+        foreach (@entries) {
+            push @nodes, $_->{node};
+        }
+    }
+
+    return \@nodes;
+}
+
+sub kea_build_node_reservations
+{
+    my ( $backend, $config, $nodes ) = @_;
+
+    my $nrtab    = xCAT::Table->new('noderes');
+    my $chaintab = xCAT::Table->new('chain');
+    my $nodetypetab = xCAT::Table->new('nodetype', -create => 0);
+    my $iscsitab = xCAT::Table->new('iscsi', -create => 0);
+    my $mactab = xCAT::Table->new('mac');
+
+    $chainents = $chaintab ? $chaintab->getNodesAttribs($nodes, ['currstate']) : undef;
+    $nrhash = $nrtab->getNodesAttribs($nodes, [ 'tftpserver', 'netboot', 'proxydhcp', 'xcatmaster', 'servicenode' ]);
+    $nodetypeents = $nodetypetab ? $nodetypetab->getNodesAttribs($nodes, [qw(os provmethod arch)]) : undef;
+    $iscsients = $iscsitab ? $iscsitab->getNodesAttribs($nodes, [qw(server target lun iname)]) : undef;
+    $machash = $mactab ? $mactab->getNodesAttribs($nodes, ['mac']) : undef;
+
+    my @reservations;
+    foreach my $node (@$nodes) {
+        push @reservations, @{ kea_node_reservations($backend, $config, $node) };
+    }
+
+    return \@reservations;
+}
+
+sub kea_build_node_reservations6
+{
+    my ( $backend, $config, $nodes ) = @_;
+
+    my $nrtab = xCAT::Table->new('noderes');
+    my $mactab = xCAT::Table->new('mac');
+    my $vpdtab = xCAT::Table->new('vpd', -create => 0);
+
+    $nrhash = $nrtab ? $nrtab->getNodesAttribs($nodes, [ 'tftpserver', 'xcatmaster', 'servicenode' ]) : undef;
+    $machash = $mactab ? $mactab->getNodesAttribs($nodes, ['mac']) : undef;
+    $vpdhash = $vpdtab ? $vpdtab->getNodesAttribs($nodes, ['uuid']) : undef;
+
+    my @reservations;
+    foreach my $node (@$nodes) {
+        push @reservations, @{ kea_node_reservations6($backend, $config, $node) };
+    }
+
+    return \@reservations;
+}
+
+sub kea_node_reservations
+{
+    my ( $backend, $config, $node ) = @_;
+
+    my $nrent = $nrhash && $nrhash->{$node} ? $nrhash->{$node}->[0] : undef;
+    my $chainent = $chainents && $chainents->{$node} ? $chainents->{$node}->[0] : undef;
+    my $ntent = $nodetypeents && $nodetypeents->{$node} ? $nodetypeents->{$node}->[0] : undef;
+    my $ient = $iscsients && $iscsients->{$node} ? $iscsients->{$node}->[0] : undef;
+    my $macent = $machash && $machash->{$node} ? $machash->{$node}->[0] : undef;
+
+    unless ($macent and $macent->{mac}) {
+        $callback->({ warning => ["Unable to find mac address for $node"] });
+        return [];
+    }
+
+    my ( $nxtsrv, $tftpserver ) = kea_next_server_for_node($node, $nrent);
+    my @reservations;
+    my @macs = split(/\|/, $macent->{mac});
+    foreach my $mace (@macs) {
+        my ( $mac, $hname ) = split(/!/, $mace);
+        $hname ||= $node;
+        next unless $mac;
+        if ($mac !~ /^[0-9a-fA-F]{2}(-[0-9a-fA-F]{2}){5,8}$|^[0-9a-fA-F]{2}(:[0-9a-fA-F]{2}){5,8}$/) {
+            $callback->({ error => ["Invalid mac address $mac for $node"], errorcode => [1] });
+            next;
+        }
+        if (!grep /:/, $mac) {
+            $mac = lc($mac);
+            $mac =~ s/(\w{2})/$1:/g;
+            $mac =~ s/:$//;
+        }
+
+        my $ip = getipaddr($hname, OnlyV4 => 1);
+        next unless $ip;
+
+        my $subnet_id = $backend->subnet_id_for_ip($config, $ip);
+        unless ($subnet_id) {
+            $callback->({ warning => ["Unable to find a Kea subnet for $node ($ip), skipping DHCP reservation"] });
+            next;
+        }
+
+        my %reservation = (
+            'subnet-id'  => $subnet_id,
+            'hw-address' => lc($mac),
+            hostname     => $hname,
+        );
+        $reservation{'ip-address'} = $ip unless ipIsDynamic($ip);
+        $reservation{'next-server'} = $nxtsrv if $nxtsrv && $nxtsrv !~ /\$\{/;
+
+        my $boot = kea_boot_for_node($node, $nrent, $chainent, $ntent, $ient, $nxtsrv);
+        $reservation{'boot-file-name'} = $boot->{'boot-file-name'} if defined $boot->{'boot-file-name'};
+        $reservation{'option-data'} = $boot->{'option-data'} if @{ $boot->{'option-data'} || [] };
+
+        push @reservations, \%reservation;
+    }
+
+    return \@reservations;
+}
+
+sub kea_node_reservations6
+{
+    my ( $backend, $config, $node ) = @_;
+
+    my $macent = $machash && $machash->{$node} ? $machash->{$node}->[0] : undef;
+    my $vpdent = $vpdhash && $vpdhash->{$node} ? $vpdhash->{$node}->[0] : undef;
+    unless ($macent and $macent->{mac}) {
+        $callback->({ warning => ["Unable to find mac address for $node"] });
+        return [];
+    }
+
+    my $duid = kea_duid_from_uuid($vpdent ? $vpdent->{uuid} : undef);
+    my @reservations;
+    foreach my $mace (split(/\|/, $macent->{mac})) {
+        my ( $mac, $hname ) = split(/!/, $mace);
+        $hname ||= $node;
+        next unless $mac;
+        if (!grep /:/, $mac) {
+            $mac = lc($mac);
+            $mac =~ s/(\w{2})/$1:/g;
+            $mac =~ s/:$//;
+        }
+
+        my $ip = getipaddr($hname, OnlyV6 => 1);
+        next unless $ip;
+
+        my $subnet_id = $backend->subnet_id_for_ip($config, $ip);
+        unless ($subnet_id) {
+            $callback->({ warning => ["Unable to find a Kea DHCPv6 subnet for $node ($ip), skipping DHCPv6 reservation"] });
+            next;
+        }
+
+        my %reservation = (
+            'subnet-id' => $subnet_id,
+            hostname    => $hname,
+        );
+        if ($duid) {
+            $reservation{duid} = $duid;
+        } else {
+            $reservation{'hw-address'} = lc($mac);
+        }
+        $reservation{'ip-addresses'} = [$ip] unless ipIsDynamic($ip);
+
+        push @reservations, \%reservation;
+    }
+
+    return \@reservations;
+}
+
+sub kea_duid_from_uuid
+{
+    my ($uuid) = @_;
+
+    return unless $uuid;
+    $uuid =~ s/[^0-9a-fA-F]//g;
+    return unless length($uuid) == 32;
+    $uuid =~ s/(..)/$1:/g;
+    $uuid =~ s/:$//;
+    return "00:04:$uuid";
+}
+
+sub kea_reservation_matches_for_nodes
+{
+    my ($nodes) = @_;
+
+    my $mactab = xCAT::Table->new('mac');
+    my $machash_local = $mactab ? $mactab->getNodesAttribs($nodes, ['mac']) : undef;
+    my $vpdtab = xCAT::Table->new('vpd', -create => 0);
+    my $vpdhash_local = $vpdtab ? $vpdtab->getNodesAttribs($nodes, ['uuid']) : undef;
+    my @matches;
+
+    foreach my $node (@$nodes) {
+        push @matches, { hostname => $node };
+        my $ip = getipaddr($node, OnlyV4 => 1);
+        push @matches, { 'ip-address' => $ip } if $ip;
+        my $ip6 = getipaddr($node, OnlyV6 => 1);
+        push @matches, { 'ip-address' => $ip6 } if $ip6;
+        my $vpdent = $vpdhash_local && $vpdhash_local->{$node} ? $vpdhash_local->{$node}->[0] : undef;
+        my $duid = kea_duid_from_uuid($vpdent ? $vpdent->{uuid} : undef);
+        push @matches, { duid => $duid } if $duid;
+        my $macent = $machash_local && $machash_local->{$node} ? $machash_local->{$node}->[0] : undef;
+        next unless $macent && $macent->{mac};
+        foreach my $mace (split(/\|/, $macent->{mac})) {
+            my ( $mac, $hname ) = split(/!/, $mace);
+            if ($hname) {
+                push @matches, { hostname => $hname };
+                my $host_ip = getipaddr($hname, OnlyV4 => 1);
+                push @matches, { 'ip-address' => $host_ip } if $host_ip;
+                my $host_ip6 = getipaddr($hname, OnlyV6 => 1);
+                push @matches, { 'ip-address' => $host_ip6 } if $host_ip6;
+            }
+            next unless $mac;
+            if (!grep /:/, $mac) {
+                $mac = lc($mac);
+                $mac =~ s/(\w{2})/$1:/g;
+                $mac =~ s/:$//;
+            }
+            push @matches, { 'hw-address' => lc($mac) };
+        }
+    }
+
+    return \@matches;
+}
+
+sub kea_query_node
+{
+    my ( $backend, $config, $node ) = @_;
+
+    my @matches = @{ kea_reservation_matches_for_nodes([$node]) };
+    my @found;
+    foreach my $match (@matches) {
+        push @found, @{ $backend->query_reservations($config, $match) };
+    }
+
+    my %seen;
+    foreach my $reservation (@found) {
+        my $key = join('|', map { $reservation->{$_} || '' } qw(subnet-id hw-address ip-address hostname));
+        next if $seen{$key}++;
+        my $msg = "$node:";
+        $msg .= " ip-address = $reservation->{'ip-address'}" if $reservation->{'ip-address'};
+        $msg .= " hardware-address = $reservation->{'hw-address'}" if $reservation->{'hw-address'};
+        $msg .= " hostname = $reservation->{hostname}" if $reservation->{hostname};
+        $callback->({ data => [$msg] });
+    }
+}
+
+sub kea_next_server_for_node
+{
+    my ( $node, $nrent ) = @_;
+
+    if ($nrent and $nrent->{tftpserver} and $nrent->{tftpserver} ne '<xcatmaster>') {
+        my $tmp_name = inet_aton($nrent->{tftpserver});
+        unless ($tmp_name) {
+            $callback->({ error => ["Unable to resolve the tftpserver for node"], errorcode => [1] });
+            return;
+        }
+        my $server = inet_ntoa($tmp_name);
+        return ($server, $server);
+    }
+
+    my $node_server = $nrent && $nrent->{xcatmaster} ? $nrent->{xcatmaster} : undef;
+    if ($node_server) {
+        my $tmp_server = inet_aton($node_server);
+        if ($tmp_server) {
+            my $server = inet_ntoa($tmp_server);
+            return ($server, $server);
+        }
+    }
+
+    my @nxtsrvd = xCAT::NetworkUtils->my_ip_facing($node);
+    unless ($nxtsrvd[0]) {
+        return ($nxtsrvd[1], $nxtsrvd[1]);
+    }
+
+    return ('${next-server}', undef);
+}
+
+sub kea_boot_for_node
+{
+    my ( $node, $nrent, $chainent, $ntent, $ient, $nxtsrv ) = @_;
+
+    my $httpport = "80";
+    my @hports = xCAT::TableUtils->get_site_attribute("httpport");
+    if ($hports[0]) {
+        $httpport = $hports[0];
+    }
+
+    my %boot = ( 'option-data' => [] );
+    my $netboot = $nrent ? $nrent->{netboot} : undef;
+
+    if ($ient and $ient->{server} and $ient->{target}) {
+        $ient->{lun} = 0 unless defined($ient->{lun});
+        my $rootpath = 'iscsi:' . $ient->{server} . ':6:3260:' . $ient->{lun} . ':' . $ient->{target};
+        push @{ $boot{'option-data'} }, { name => 'root-path', data => $rootpath };
+        push @{ $boot{'option-data'} }, { name => 'iscsi-initiator-iqn', data => $ient->{iname} } if defined($ient->{iname});
+    }
+
+    if ($netboot and $netboot eq 'pxe') {
+        $boot{'boot-file-name'} = 'pxelinux.0';
+    } elsif ($netboot and $netboot eq 'yaboot') {
+        $boot{'boot-file-name'} = "/yb/node/yaboot-$node";
+    } elsif ($netboot and $netboot =~ /^grub2[-]?.*$/) {
+        $boot{'boot-file-name'} = "/boot/grub2/grub2-$node";
+    } elsif ($netboot and $netboot eq 'petitboot') {
+        if ($nxtsrv) {
+            my $petitboot_conf = "http://$nxtsrv:$httpport/tftpboot/petitboot/$node";
+            $boot{'boot-file-name'} = $petitboot_conf;
+            push @{ $boot{'option-data'} }, { name => 'conf-file', data => $petitboot_conf };
+        }
+    } elsif ($netboot and $netboot eq 'onie') {
+        my $onie_url = kea_onie_url_for_node($node, $ntent, $nxtsrv, $httpport);
+        push @{ $boot{'option-data'} }, { name => 'www-server', data => $onie_url } if $onie_url;
+    }
+
+    push @{ $boot{'option-data'} }, { name => 'host-name', data => $node };
+    return \%boot;
+}
+
+sub kea_onie_url_for_node
+{
+    my ( $node, $ntent, $nxtsrv, $httpport ) = @_;
+
+    return unless $nxtsrv;
+    my $provmethod = $ntent ? $ntent->{provmethod} : undef;
+    return "http://$nxtsrv:$httpport/install/onie/onie-installer" unless $provmethod;
+
+    my $linuximagetab = xCAT::Table->new('linuximage');
+    my $imagetab = $linuximagetab ? $linuximagetab->getAttribs({ imagename => $provmethod }, 'pkgdir') : undef;
+    return "http://$nxtsrv:$httpport/install/onie/onie-installer" unless $imagetab;
+
+    foreach my $pkgdir (split(/,/, $imagetab->{pkgdir} || '')) {
+        return "http://$nxtsrv:$httpport$pkgdir" if -f $pkgdir;
+    }
+
+    $callback->({ warning => ["osimage $provmethod pkgdir doesn't exists"]});
+    return;
+}
+
+sub kea_boot_client_classes
+{
+    return xCAT::DHCP::BootPolicy->kea_client_classes(
+        xnba_kpxe => -f "$tftpdir/xcat/xnba.kpxe" ? 1 : 0,
+        xnba_efi  => -f "$tftpdir/xcat/xnba.efi"  ? 1 : 0,
+    );
+}
+
+sub kea_option_defs
+{
+    return [
+        { name => 'conf-file', code => 209, type => 'string', space => 'dhcp4' },
+        { name => 'iscsi-initiator-iqn', code => 203, type => 'string', space => 'dhcp4' },
+        { name => 'cumulus-provision-url', code => 239, type => 'string', space => 'dhcp4' },
+    ];
+}
+
+sub kea_global_option_data
+{
+    my @options;
+    if ($::XCATSITEVALS{timezone}) {
+        push @options, { name => 'tcode', data => $::XCATSITEVALS{timezone} };
+    }
+    return \@options;
+}
+
+sub kea_dhcp_lease_time
+{
+    return $::XCATSITEVALS{'dhcplease'} if defined $::XCATSITEVALS{'dhcplease'} && $::XCATSITEVALS{'dhcplease'} ne "";
+    return 43200;
+}
+
+sub kea_control_agent_enabled
+{
+    my @entries = xCAT::TableUtils->get_site_attribute("keacontrolagent");
+    my $value = $entries[0];
+    return 0 unless defined($value);
+    return $value =~ /^(1|yes|y|true|enabled)$/i ? 1 : 0;
+}
+
+sub kea_control_agent_live_enabled
+{
+    my ($backend) = @_;
+
+    return 0 unless kea_control_agent_enabled();
+    return $backend->host_cmds_hook_path() ? 1 : 0;
+}
+
+sub kea_mask_to_prefix
+{
+    my ($mask) = @_;
+
+    my $maskn = unpack("N", inet_aton($mask));
+    my $bits = 0;
+    for my $idx (0 .. 31) {
+        $bits++ if $maskn & (1 << (31 - $idx));
+    }
+
+    return $bits;
+}
+
+sub kea_prefix_to_mask
+{
+    my ($prefix) = @_;
+
+    return '0.0.0.0' unless defined($prefix) && $prefix =~ /^\d+$/ && $prefix > 0 && $prefix <= 32;
+    my $maskn = (0xffffffff << (32 - $prefix)) & 0xffffffff;
+    return inet_ntoa(pack("N", $maskn));
+}
+
+sub kea_skip_ipv4_network
+{
+    my ($net) = @_;
+
+    my $firstoctet = $net;
+    $firstoctet =~ s/^(\d+)\..*/$1/;
+    return 1 if $net eq "169.254.0.0";
+    return 1 if $net eq "127.0.0.0" || $net eq '127';
+    return 1 if ($firstoctet >= 224 and $firstoctet <= 239);
+    return 0;
+}
+
 # Restart dhcpd on aix
 sub restart_dhcpd_aix
 {
@@ -2572,8 +3639,7 @@ sub addnet
                 unless ($ent->{dhcpserver}
                     and xCAT::NetworkUtils->thishostisnot($ent->{dhcpserver}))
                 {    #If specific, only one dhcp server gets a dynamic range
-                    $range = $ent->{dynamicrange};
-                    $range =~ s/[,-]/ /g;
+                    $range = join ';', xCAT::DHCP::Range->isc_ranges($ent->{dynamicrange});
                 }
             }
             else

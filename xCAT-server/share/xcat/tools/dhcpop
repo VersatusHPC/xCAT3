@@ -1,6 +1,14 @@
 #!/usr/bin/perl -w
 #use Data::Dumper;
+BEGIN
+{
+    $::XCATROOT = $ENV{'XCATROOT'} ? $ENV{'XCATROOT'} : '/opt/xcat';
+}
+use lib "$::XCATROOT/lib/perl";
+
 use Getopt::Long;
+use Fcntl ':flock';
+use xCAT::DHCP::Backend;
 
 sub usage{
     print "Usage: dhcphelper -h \n";
@@ -26,6 +34,64 @@ if($help){
     &usage;
     exit 0;
 }elsif($rmop){
+    my $backend = xCAT::DHCP::Backend->new_backend();
+    if (ref($backend) ne 'HASH' && $backend->name eq 'kea') {
+        if ($mac && $mac !~ /:/) {
+            $mac = lc($mac);
+            $mac =~ s/(\w{2})/$1:/g;
+            $mac =~ s/:$//;
+        }
+
+        mkdir "/tmp/xcat" unless -d "/tmp/xcat";
+        open(my $dhcplockfd, ">", "/tmp/xcat/dhcplock") or die "Unable to lock DHCP state: $!";
+        flock($dhcplockfd, LOCK_EX);
+
+        my $config4 = $backend->load_dhcp4_config();
+        if ($config4->{error}) {
+            print "Error: $config4->{error}\n";
+            exit 1;
+        }
+        my $config6;
+        my $have_dhcp6 = -e $backend->dhcp6_config_file();
+        if ($have_dhcp6) {
+            $config6 = $backend->load_dhcp6_config();
+            if ($config6->{error}) {
+                print "Error: $config6->{error}\n";
+                exit 1;
+            }
+        }
+
+        my @matches;
+        push @matches, { hostname => $hostname } if $hostname;
+        push @matches, { 'hw-address' => lc($mac) } if $mac;
+        push @matches, { 'ip-address' => $ip } if $ip;
+
+        foreach my $match (@matches) {
+            $backend->delete_reservations($config4, $match);
+            $backend->delete_reservations($config6, $match) if $config6;
+        }
+
+        my $result = $backend->write_dhcp4_json($backend->encode_config($config4));
+        if ($result->{error}) {
+            print "Error: $result->{error}\n";
+            exit 1;
+        }
+        if ($config6) {
+            my $result6 = $backend->write_dhcp6_json($backend->encode_config($config6));
+            if ($result6->{error}) {
+                print "Error: $result6->{error}\n";
+                exit 1;
+            }
+        }
+
+        my $restart = $backend->restart_services(ipv6 => $config6 ? 1 : 0);
+        if ($restart->{error}) {
+            print "Error: $restart->{error}\n";
+            exit 1;
+        }
+        exit 0;
+    }
+
     my $out=qx(tabdump -w key==omapi -w username==xcat_key  passwd |tail -n1|awk -F, '{print \$2","\$3}');
     $out =~ s/("|\n)//g;
     my ($id,$passwd)=split(',',$out);
