@@ -295,7 +295,7 @@ if rpm -q xCAT-server > /dev/null 2>&1; then
     lsdef || { echo "FAIL: lsdef did not work"; exit 1; }
 else
     echo "WARN: xCAT-server skipped (missing deps) — testing perl-xCAT only"
-    perl -e 'use xCAT::Table; print "perl-xCAT loads OK\n"' \
+    PERL5LIB=/opt/xcat/lib/perl perl -e 'use xCAT::Table; print "perl-xCAT loads OK\n"' \
         || { echo "FAIL: perl-xCAT modules broken"; exit 1; }
 fi
 
