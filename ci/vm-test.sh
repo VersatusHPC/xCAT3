@@ -290,8 +290,13 @@ rpm -q xCAT-client || { echo "FAIL: xCAT-client not installed"; exit 1; }
 
 if rpm -q xCAT-server > /dev/null 2>&1; then
     echo "xCAT-server installed — running full validation"
-    source /etc/profile.d/xcat.sh 2>/dev/null || true
-    systemctl is-active xcatd || { echo "FAIL: xcatd is not running"; exit 1; }
+    export XCATROOT=/opt/xcat
+    export PATH=$XCATROOT/bin:$XCATROOT/sbin:$XCATROOT/share/xcat/tools:$PATH
+    export MANPATH=$XCATROOT/share/man:$MANPATH
+    export PERL5LIB=$XCATROOT/lib/perl:$PERL5LIB
+    systemctl start xcatd || true
+    sleep 5
+    systemctl is-active xcatd || { echo "FAIL: xcatd is not running"; systemctl status xcatd --no-pager; exit 1; }
     lsdef || { echo "FAIL: lsdef did not work"; exit 1; }
 else
     echo "WARN: xCAT-server skipped (missing deps) — testing perl-xCAT only"
