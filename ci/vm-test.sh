@@ -282,8 +282,9 @@ REPO
 dnf makecache || true
 
 echo "--- Installing xCAT components ---"
-dnf install -y xCAT-server xCAT-client perl-xCAT \
-    || { echo "FAIL: dnf install xCAT components failed"; exit 1; }
+dnf install -y --skip-broken xCAT-server xCAT-client perl-xCAT
+rpm -q perl-xCAT xCAT-server xCAT-client \
+    || { echo "FAIL: core xCAT packages not installed"; exit 1; }
 
 echo "--- Sourcing xCAT profile ---"
 source /etc/profile.d/xcat.sh 2>/dev/null || true
