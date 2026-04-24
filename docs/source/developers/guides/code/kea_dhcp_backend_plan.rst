@@ -359,7 +359,15 @@ and Kea backends:
   ``kea-dhcp4 -t``; passed the full DHCP unit suite on ppc64le after installing
   the Perl test harness packages on the VM. Earlier full POWER image boot
   validation reached xCAT Genesis, then failed loading ``genesis.kernel.ppc64``
-  because of a preexisting invalid ELF image issue unrelated to Kea.
+  because of a Genesis kernel issue unrelated to Kea. Initial triage showed
+  the installed ``/tftpboot/xcat/genesis.kernel.ppc64`` is a
+  PowerPC/OpenPOWER ELF, not an ``x86_64`` binary, and comes from
+  ``xCAT-genesis-base-ppc64-2.18.0-RC1`` built on
+  ``xcat-dev-server-ppc.cluster.local`` on March 30, 2026. The likely change
+  area is the Genesis rebuild work merged before this PR, especially PR ``#8``
+  / merge ``40a7e4c43`` and commits ``d691c5ccd`` (Genesis base source
+  package generation), ``4a1905171`` (ppc64le Genesis boot changes), and
+  ``baa2380cd`` (moving the dracut call into the spec).
 
 Implementation Order
 --------------------

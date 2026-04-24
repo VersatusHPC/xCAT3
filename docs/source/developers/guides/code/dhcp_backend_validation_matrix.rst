@@ -137,8 +137,16 @@ Current exceptions:
   issue ``#11``. The failure reproduces on upstream ``master`` and is not caused
   by the Kea backend work.
 * EL10 ``ppc64le`` Kea configuration and DHCP unit validation pass. Full POWER
-  image boot validation can still be blocked by a preexisting
-  ``genesis.kernel.ppc64`` invalid-ELF issue unrelated to Kea.
+  image boot validation can still be blocked by a ``genesis.kernel.ppc64``
+  invalid-ELF issue unrelated to Kea. Initial triage showed the installed
+  ``/tftpboot/xcat/genesis.kernel.ppc64`` is a PowerPC/OpenPOWER ELF, not an
+  ``x86_64`` binary, and is the package payload from
+  ``xCAT-genesis-base-ppc64-2.18.0-RC1`` built on
+  ``xcat-dev-server-ppc.cluster.local`` on March 30, 2026. The likely change
+  area is the Genesis rebuild work merged before this PR, especially PR ``#8``
+  / merge ``40a7e4c43`` and commits ``d691c5ccd`` (Genesis base source
+  package generation), ``4a1905171`` (ppc64le Genesis boot changes), and
+  ``baa2380cd`` (moving the dracut call into the spec).
 
 Current PR Validation Snapshot
 ------------------------------
@@ -185,7 +193,8 @@ backend validation result:
      - Pass
      - Renderer emitted ``evaluate-additional-classes`` and
        ``only-in-additional-list``; full DHCP unit suite and ``kea-dhcp4 -t``
-       passed.
+       passed. Full image boot remains blocked after GRUB by the separate
+       Genesis ppc64 kernel issue described above.
 
 Reporting Rule
 --------------
