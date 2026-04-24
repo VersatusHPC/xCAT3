@@ -34,6 +34,13 @@ Run these checks for every DHCP backend change before live validation:
 * Perl syntax checks for changed DHCP modules
 * unit tests for backend selection, range handling, boot policy, and renderer
   behavior
+* Kea version-aware renderer checks when client classification is touched:
+
+  * Kea 2.4 output must use ``only-if-required`` and
+    ``require-client-classes``
+  * Kea 3.x output must use ``only-in-additional-list`` and
+    ``evaluate-additional-classes``
+
 * backend-native configuration validation:
 
   * ``dhcpd -t -cf <config>`` for ISC
@@ -114,6 +121,10 @@ The current KVM validation hosts are:
 * ``rome01.local.versatushpc.com.br`` for ``x86_64``
 * ``power.local.versatushpc.com.br`` for ``ppc64le``
 
+Validation access should use the ``builder`` account and the
+``id_ed25519_reposync`` SSH key. Avoid relying on ad-hoc root login or
+one-off cloud-init keys when recording repeatable validation procedure.
+
 Known Exceptions
 ----------------
 
@@ -125,8 +136,56 @@ Current exceptions:
 * Ubuntu 22.04 LTS ISC OMAPI/``omshell`` host reservation updates are blocked by
   issue ``#11``. The failure reproduces on upstream ``master`` and is not caused
   by the Kea backend work.
-* EL10 ``ppc64le`` currently reaches xCAT Genesis, but full POWER validation is
-  blocked by a preexisting ``genesis.kernel.ppc64`` issue unrelated to Kea.
+* EL10 ``ppc64le`` Kea configuration and DHCP unit validation pass. Full POWER
+  image boot validation can still be blocked by a preexisting
+  ``genesis.kernel.ppc64`` invalid-ELF issue unrelated to Kea.
+
+Current PR Validation Snapshot
+------------------------------
+
+As of April 23, 2026, the ``kea-dhcp-backend`` PR has the following DHCP
+backend validation result:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 16 10 10 20 44
+
+   * - Platform
+     - Arch
+     - Backend
+     - Result
+     - Notes
+   * - EL9
+     - ``x86_64``
+     - ``ISC``
+     - Pass
+     - ``site.dhcpbackend=auto`` selected ``isc``; legacy DHCP unit subset
+       passed.
+   * - Ubuntu 22.04 LTS
+     - ``x86_64``
+     - ``ISC``
+     - Pass with known exception
+     - ``site.dhcpbackend=auto`` selected ``isc``; legacy DHCP unit subset
+       passed. OMAPI reservation updates remain tracked by issue ``#11``.
+   * - EL10
+     - ``x86_64``
+     - ``Kea 3.0.1``
+     - Pass
+     - Renderer emitted ``evaluate-additional-classes`` and
+       ``only-in-additional-list``; ``kea-dhcp4 -t`` passed.
+   * - Ubuntu 24.04 LTS
+     - ``x86_64``
+     - ``Kea 2.4.1``
+     - Pass
+     - Renderer emitted ``require-client-classes`` and ``only-if-required``;
+       full DHCP unit suite and ``kea-dhcp4 -t`` passed.
+   * - EL10
+     - ``ppc64le``
+     - ``Kea 3.0.1``
+     - Pass
+     - Renderer emitted ``evaluate-additional-classes`` and
+       ``only-in-additional-list``; full DHCP unit suite and ``kea-dhcp4 -t``
+       passed.
 
 Reporting Rule
 --------------

@@ -278,6 +278,11 @@ Configuration validation tests:
 * ``kea-dhcp4 -t`` and ``kea-dhcp6 -t`` for Kea DHCP output
 * ``kea-dhcp-ddns -t`` for D2 output
 * ``kea-ctrl-agent -t`` for Control Agent output
+* Kea client-class renderer output for both supported syntax generations:
+
+  * Kea 2.4 uses ``only-if-required`` and ``require-client-classes``
+  * Kea 3.x uses ``only-in-additional-list`` and
+    ``evaluate-additional-classes``
 
 Backend selection tests:
 
@@ -328,6 +333,8 @@ Open test infrastructure details to confirm:
   available
 * whether nested or privileged test guests can run DHCP client and PXE tests
 * cleanup expectations for temporary VMs, networks, and storage volumes
+* the ``builder`` account and ``id_ed25519_reposync`` SSH key are available for
+  repeatable validation access
 
 Manual Validation Snapshot
 --------------------------
@@ -347,9 +354,12 @@ and Kea backends:
   xNBA network script, and Genesis fetch. Per-node OMAPI reservation updates on
   Jammy still fail with ``omshell`` descriptor errors and appear to be a
   preexisting Ubuntu-specific ISC issue outside the Kea scope.
-* EL10 plus Kea on ppc64le: Kea and the Kea boot handoff reached xCAT Genesis,
-  but Genesis failed loading ``genesis.kernel.ppc64`` because of a preexisting
-  invalid ELF image issue unrelated to Kea.
+* EL10 plus Kea on ppc64le: passed Kea 3.x renderer validation with
+  ``evaluate-additional-classes`` and ``only-in-additional-list``; passed
+  ``kea-dhcp4 -t``; passed the full DHCP unit suite on ppc64le after installing
+  the Perl test harness packages on the VM. Earlier full POWER image boot
+  validation reached xCAT Genesis, then failed loading ``genesis.kernel.ppc64``
+  because of a preexisting invalid ELF image issue unrelated to Kea.
 
 Implementation Order
 --------------------
