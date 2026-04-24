@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 #
-# ci/vm-test.sh — Create a test VM, install xCAT from the local nginx repo, validate, and clean up.
+# ci/vm-test.sh — Create a test VM, install xCAT from a local repo, validate, and clean up.
 #
 # Usage:
-#   ./ci/vm-test.sh [--keep] [--releasever 10] [--nginx-port 8080]
+#   ./ci/vm-test.sh --releasever 10 --repo-path /path/to/rpms --repo-target rhel+epel-10-x86_64
 #
 # The script tracks every VM it creates in a state file so that only VMs
 # from that file are ever touched (started, stopped, or destroyed).
@@ -22,14 +22,16 @@ SSH_TIMEOUT=300
 LIBVIRT_NET="default"
 REPO_TARGET="${REPO_TARGET:-}"
 REPO_PATH="${REPO_PATH:-}"
+XCAT_DEP_PATH="${XCAT_DEP_PATH:-/opt/xcat-dep}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
-        --keep)         KEEP_VM=1; shift ;;
-        --releasever)   RELEASEVER="$2"; shift 2 ;;
-        --repo-target)  REPO_TARGET="$2"; shift 2 ;;
-        --repo-path)    REPO_PATH="$2"; shift 2 ;;
-        *)              echo "Unknown option: $1" >&2; exit 1 ;;
+        --keep)           KEEP_VM=1; shift ;;
+        --releasever)     RELEASEVER="$2"; shift 2 ;;
+        --repo-target)    REPO_TARGET="$2"; shift 2 ;;
+        --repo-path)      REPO_PATH="$2"; shift 2 ;;
+        --xcat-dep-path)  XCAT_DEP_PATH="$2"; shift 2 ;;
+        *)                echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
 
@@ -105,7 +107,6 @@ make_cloud_init_iso() {
     local ci_dir="$STATE_DIR/$VM_NAME-ci"
     mkdir -p "$ci_dir"
 
-    # user-data
     cat > "$ci_dir/user-data" << USERDATA
 #cloud-config
 hostname: $VM_NAME
@@ -123,7 +124,6 @@ ssh_authorized_keys:
 
 packages:
   - epel-release
-  - rsync
 
 runcmd:
   - sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
@@ -131,13 +131,11 @@ runcmd:
   - touch /var/lib/cloud-init-done
 USERDATA
 
-    # meta-data
     cat > "$ci_dir/meta-data" << METADATA
 instance-id: $VM_NAME
 local-hostname: $VM_NAME
 METADATA
 
-    # network-config (DHCP from the default libvirt network)
     cat > "$ci_dir/network-config" << NETCFG
 version: 2
 ethernets:
@@ -145,7 +143,6 @@ ethernets:
     dhcp4: true
 NETCFG
 
-    # Generate ISO
     local iso_path="$STATE_DIR/${VM_NAME}-cidata.iso"
     if command -v genisoimage &>/dev/null; then
         genisoimage -output "$iso_path" -volid cidata -joliet -rock \
@@ -176,7 +173,6 @@ create_vm() {
     local machine_type
     if [[ "$ARCH" == "ppc64le" ]]; then
         machine_type="pseries"
-        osinfo="rocky9"
     else
         machine_type="q35"
     fi
@@ -227,23 +223,33 @@ ssh_cmd() {
     ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$@"
 }
 
-copy_repo_to_vm() {
+copy_repos_to_vm() {
     local vm_ip="$1"
-    if [[ -z "$REPO_PATH" ]]; then
-        die "--repo-path is required"
-    fi
-    log "Copying repo from $REPO_PATH to $vm_ip:/opt/xcat3-repo/"
+    [[ -z "$REPO_PATH" ]] && die "--repo-path is required"
+
+    log "Copying xcat-core repo from $REPO_PATH to $vm_ip:/opt/xcat3-repo/"
     ssh_cmd root@"$vm_ip" 'mkdir -p /opt/xcat3-repo'
-    rsync -a -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
-        "$REPO_PATH/" root@"$vm_ip":/opt/xcat3-repo/
-    log "Repo copied successfully"
+    tar -C "$REPO_PATH" -cf - . \
+        | ssh_cmd root@"$vm_ip" 'tar -C /opt/xcat3-repo -xf -'
+
+    local dep_dir="$XCAT_DEP_PATH/el${RELEASEVER}/${ARCH}"
+    if [[ -d "$dep_dir" ]]; then
+        log "Copying xcat-dep from $dep_dir to $vm_ip:/opt/xcat-dep/"
+        ssh_cmd root@"$vm_ip" 'mkdir -p /opt/xcat-dep'
+        tar -C "$dep_dir" -cf - . \
+            | ssh_cmd root@"$vm_ip" 'tar -C /opt/xcat-dep -xf -'
+    else
+        log "WARNING: xcat-dep not found at $dep_dir — skipping"
+    fi
+
+    log "Repos copied successfully"
 }
 
 run_tests() {
     local vm_ip="$1"
     log "Running tests on $vm_ip"
 
-    copy_repo_to_vm "$vm_ip"
+    copy_repos_to_vm "$vm_ip"
 
     ssh_cmd root@"$vm_ip" bash -s "$RELEASEVER" "$ARCH" << 'TEST_SCRIPT'
 set -euo pipefail
@@ -255,15 +261,25 @@ echo "--- Waiting for cloud-init to finish ---"
 timeout 300 bash -c 'while [ ! -f /var/lib/cloud-init-done ]; do sleep 5; done' \
     || { echo "cloud-init did not finish in time"; exit 1; }
 
-echo "--- Configuring local repo ---"
+echo "--- Enabling CRB repo ---"
+dnf config-manager --set-enabled crb 2>/dev/null || true
+
+echo "--- Configuring local repos ---"
 cat > /etc/yum.repos.d/xcat3-local.repo << 'REPO'
-[xcat3-local]
+[xcat3-core]
 name=xCAT3 CI Build (local)
 baseurl=file:///opt/xcat3-repo/
 gpgcheck=0
 enabled=1
+
+[xcat3-dep]
+name=xCAT3 Dependencies (local)
+baseurl=file:///opt/xcat-dep/
+gpgcheck=0
+enabled=1
 REPO
-dnf makecache --repo=xcat3-local || true
+
+dnf makecache || true
 
 echo "--- Installing xCAT ---"
 dnf install -y xCAT || { echo "FAIL: dnf install xCAT failed"; exit 1; }
