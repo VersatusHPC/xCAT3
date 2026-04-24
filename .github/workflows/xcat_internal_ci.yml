@@ -1,0 +1,193 @@
+name: xCAT Internal CI
+
+on:
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      keep_vms:
+        description: "Keep test VMs after completion (for debugging)"
+        type: boolean
+        default: false
+
+jobs:
+  build-test:
+    name: "Build & Test (${{ matrix.distro }} ${{ matrix.arch }})"
+    runs-on: [self-hosted, "${{ matrix.runner }}"]
+    timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # ── x86_64 on rome01 ───────────────────────────────────────────
+          - distro: EL9
+            arch: x86_64
+            runner: xcat-rhel-x86_64
+            type: rpm
+            elver: 9
+          - distro: EL10
+            arch: x86_64
+            runner: xcat-rhel-x86_64
+            type: rpm
+            elver: 10
+          - distro: Ubuntu-22.04
+            arch: x86_64
+            runner: xcat-rhel-x86_64
+            type: deb
+            ubuntu_image: docker.io/library/ubuntu:22.04
+            ubuntu_tag: "22.04"
+          - distro: Ubuntu-24.04
+            arch: x86_64
+            runner: xcat-rhel-x86_64
+            type: deb
+            ubuntu_image: docker.io/library/ubuntu:24.04
+            ubuntu_tag: "24.04"
+          # ── ppc64le on power ───────────────────────────────────────────
+          - distro: EL9
+            arch: ppc64le
+            runner: xcat-alma-ppc64le
+            type: rpm
+            elver: 9
+          - distro: EL10
+            arch: ppc64le
+            runner: xcat-alma-ppc64le
+            type: rpm
+            elver: 10
+          - distro: Ubuntu-22.04
+            arch: ppc64le
+            runner: xcat-alma-ppc64le
+            type: deb
+            ubuntu_image: docker.io/ppc64le/ubuntu:22.04
+            ubuntu_tag: "22.04"
+          - distro: Ubuntu-24.04
+            arch: ppc64le
+            runner: xcat-alma-ppc64le
+            type: deb
+            ubuntu_image: docker.io/ppc64le/ubuntu:24.04
+            ubuntu_tag: "24.04"
+
+    steps:
+      - name: Set up isolated workspace
+        run: |
+          WORKDIR="/var/tmp/xcat3-ci/${{ matrix.distro }}-${{ matrix.arch }}"
+          sudo rm -rf "$WORKDIR"
+          sudo mkdir -p "$WORKDIR"
+          sudo chown "$(id -u):$(id -g)" "$WORKDIR"
+          echo "WORKDIR=$WORKDIR" >> "$GITHUB_ENV"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          path: src
+
+      - name: Copy source to workspace
+        run: cp -a src/. "$WORKDIR/"
+
+      - name: Prepare build environment
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          git rev-parse HEAD > Gitinfo
+          echo "snap$(date +%Y%m%d%H%M)" > Release
+          echo "Release set to: $(cat Release)"
+
+      # ── RPM build steps (EL9/EL10) ──────────────────────────────────────
+      - name: Install RPM build dependencies
+        if: matrix.type == 'rpm'
+        run: |
+          sudo dnf install -y \
+            mock createrepo_c perl perl-core perl-generators \
+            perl-File-Slurper perl-Parallel-ForkManager \
+            perl-Pod-Usage perl-autodie perl-Carp \
+            qemu-img virt-install libvirt genisoimage openssh-clients \
+            curl rpm-build rsync 2>&1 | tail -5
+          sudo usermod -aG mock "$(whoami)" 2>/dev/null || true
+          sudo mkdir -p /root/rpmbuild/SOURCES
+          sudo systemctl enable --now libvirtd
+
+      - name: Detect mock target
+        if: matrix.type == 'rpm'
+        id: target
+        run: |
+          DISTRO=$(. /etc/os-release && echo "$ID")
+          case "$DISTRO" in
+            almalinux) DISTRO="alma" ;;
+            rocky)     DISTRO="rocky" ;;
+          esac
+          TARGET="${DISTRO}+epel-${{ matrix.elver }}-${{ matrix.arch }}"
+          echo "target=$TARGET" >> "$GITHUB_OUTPUT"
+          echo "Mock target: $TARGET"
+
+      - name: Build RPMs
+        if: matrix.type == 'rpm'
+        working-directory: ${{ env.WORKDIR }}
+        run: sudo perl buildrpms.pl --target "${{ steps.target.outputs.target }}" --force
+
+      - name: Verify RPMs built
+        if: matrix.type == 'rpm'
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          TARGET="${{ steps.target.outputs.target }}"
+          RPM_COUNT=$(find "dist/$TARGET/rpms" -name "*.rpm" 2>/dev/null | wc -l)
+          echo "Built $RPM_COUNT RPMs in dist/$TARGET/rpms/"
+          ls -la "dist/$TARGET/rpms/"*.rpm 2>/dev/null | head -20
+          test "$RPM_COUNT" -gt 0 || { echo "ERROR: no RPMs produced"; exit 1; }
+
+      - name: Run VM-based test
+        if: matrix.type == 'rpm'
+        working-directory: ${{ env.WORKDIR }}
+        run: |
+          KEEP_FLAG=""
+          if [[ "${{ github.event.inputs.keep_vms }}" == "true" ]]; then
+            KEEP_FLAG="--keep"
+          fi
+          TARGET="${{ steps.target.outputs.target }}"
+          sudo -E bash ci/vm-test.sh \
+            --releasever ${{ matrix.elver }} \
+            --repo-target "$TARGET" \
+            --repo-path "$WORKDIR/dist/$TARGET/rpms" \
+            $KEEP_FLAG
+
+      - name: Upload RPMs
+        if: always() && matrix.type == 'rpm'
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpms-${{ matrix.distro }}-${{ matrix.arch }}
+          path: ${{ env.WORKDIR }}/dist/*/rpms/*.rpm
+          retention-days: 7
+          if-no-files-found: warn
+
+      # ── DEB build steps (Ubuntu) ────────────────────────────────────────
+      - name: Install DEB build dependencies
+        if: matrix.type == 'deb'
+        run: sudo dnf install -y podman 2>&1 | tail -3
+
+      - name: Build DEBs
+        if: matrix.type == 'deb'
+        run: |
+          sudo mkdir -p "${WORKDIR}/dist/ubuntu-${{ matrix.ubuntu_tag }}-${{ matrix.arch }}"
+          sudo podman run --rm \
+            -v "${WORKDIR}:/xcatsrc:Z" \
+            -v "${WORKDIR}/dist/ubuntu-${{ matrix.ubuntu_tag }}-${{ matrix.arch }}:/xcatbuild:Z" \
+            -e BUILDALL=1 -e GPGSIGN=0 \
+            ${{ matrix.ubuntu_image }} \
+            bash -c '
+              set -e
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update -qq
+              apt-get install -y -qq reprepro devscripts debhelper git quilt \
+                libsoap-lite-perl libdbi-perl libjson-perl libcgi-pm-perl 2>&1 | tail -3
+              cp -a /xcatsrc /tmp/xcat-core && cd /tmp/xcat-core
+              ./build-ubunturepo -c UP=0 BUILDALL=1 GPGSIGN=0 DEST=/xcatbuild
+            '
+
+      - name: Upload DEBs
+        if: always() && matrix.type == 'deb'
+        uses: actions/upload-artifact@v4
+        with:
+          name: debs-${{ matrix.distro }}-${{ matrix.arch }}
+          path: ${{ env.WORKDIR }}/dist/ubuntu-*/xcat-core/*.deb
+          retention-days: 7
+          if-no-files-found: warn
+
+      - name: Clean up workspace
+        if: always()
+        run: sudo rm -rf "$WORKDIR"
