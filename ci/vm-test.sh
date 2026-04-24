@@ -49,7 +49,7 @@ VM_DISK="${CLOUD_IMG_DIR}/${VM_NAME}.qcow2"
 SSH_KEY="$STATE_DIR/ci-ssh-key"
 
 # ── helpers ──────────────────────────────────────────────────────────────────
-log()  { echo "$(date '+%Y-%m-%d %H:%M:%S') [vm-test] $*"; }
+log()  { echo "$(date '+%Y-%m-%d %H:%M:%S') [vm-test] $*" >&2; }
 die()  { log "FATAL: $*"; exit 1; }
 
 state_init() {
