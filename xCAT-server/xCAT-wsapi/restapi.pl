@@ -621,9 +621,9 @@ my %URIdef = (
             desc    => "[URI:/services/dhcp] - The dhcp service resource.",
             matcher => '^/services/dhcp$',
             POST    => {
-                desc => "Create the dhcpd.conf for all the networks which are defined in the xCAT Management Node.",
+                desc => "Create the DHCP server configuration for all the networks which are defined in the xCAT Management Node.",
                 usage => "||$usagemsg{non_getreturn}|",
-                example => "|Create the dhcpd.conf and restart the dhcpd.|POST|/services/dhcp||",
+                example => "|Create the DHCP configuration and restart the selected DHCP service.|POST|/services/dhcp||",
                 cmd      => "makedhcp",
                 fhandler => \&nonobjhdl,
                 outhdler => \&noout,
@@ -2744,5 +2744,4 @@ sub pushFlags {
         }
     }
 }
-
 

@@ -284,7 +284,7 @@ function servicemap {
    # specified with structure
    # INIT_(general service name) = "list of possible service names"
    #
-   INIT_dhcp="dhcp3-server dhcpd isc-dhcp-server";
+   INIT_dhcp="dhcp3-server dhcpd isc-dhcp-server kea-dhcp4";
 
    INIT_nfs="nfsserver nfs-server nfs nfs-kernel-server";
 
@@ -826,4 +826,3 @@ function msgutil_r {
 function msgutil {
    msgutil_r "" "$@"
 }
-

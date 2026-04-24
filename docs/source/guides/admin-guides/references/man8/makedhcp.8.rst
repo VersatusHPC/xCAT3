@@ -41,6 +41,8 @@ DESCRIPTION
 
 The \ **makedhcp**\  command creates and updates the DHCP configuration on the management node and service nodes.
 The \ **makedhcp**\  command is supported for both Linux and AIX clusters.
+On Linux, the DHCP implementation is selected by the ``site.dhcpbackend`` attribute.
+The ``auto`` setting keeps ISC DHCP on platforms where it is still available and uses Kea DHCP on platforms such as EL10 and Ubuntu 24.04.
 
 
 1.
@@ -65,8 +67,13 @@ The \ **makedhcp**\  command is supported for both Linux and AIX clusters.
 
 4.
  
- Then run \ **makedhcp**\  with a noderange or the \ **-a**\  option.  This will inject into dhcpd configuration data pertinent to the specified nodes.
- On linux, the configuration information immediately takes effect without a restart of DHCP.
+ Then run \ **makedhcp**\  with a noderange or the \ **-a**\  option.  This will inject DHCP configuration data pertinent to the specified nodes.
+ With ISC DHCP, Linux node entries are updated through OMAPI and ``omshell``.
+ With Kea DHCP, xCAT stores node reservations in the Kea JSON configuration and,
+ when the Kea Control Agent and host-commands hook are enabled, performs live
+ reservation add and delete operations through the Kea control API. If the live
+ control path is unavailable, xCAT validates the updated Kea configuration and
+ restarts the Kea services.
  
 
 
@@ -85,7 +92,8 @@ OPTIONS
  (Which networks dhcpd should listen on can be controlled by the dhcpinterfaces attribute in the site(5)|site.5 table.)
  The \ **makedhcp**\  command will automatically restart the dhcp daemon after this operation.
  This option will replace any existing configuration file (making a backup of it first).
- For Linux systems the file will include network entries as well as certain general parameters such as a dynamic range and omapi configuration.
+ For Linux systems using ISC DHCP, the file will include network entries as well as certain general parameters such as a dynamic range and omapi configuration.
+ For Linux systems using Kea DHCP, the generated files are ``/etc/kea/kea-dhcp4.conf``, ``/etc/kea/kea-dhcp6.conf`` when IPv6 networks are configured, ``/etc/kea/kea-ctrl-agent.conf`` when the Kea Control Agent is enabled, and ``/etc/kea/kea-dhcp-ddns.conf`` when DDNS is enabled.
  For AIX systems the file will include network entries.
  On AIX systems, if there are any non-xCAT entries in the existing configuration file they will be preserved and added to the end of the new configuration file.
  
@@ -108,6 +116,7 @@ OPTIONS
 \ **-s**\  \ *statements*\ 
  
  For the input noderange, the argument will be interpreted like dhcp configuration file text.
+ This option is only supported by the ISC DHCP backend.
  
 
 
@@ -221,6 +230,12 @@ DHCP configuration files:
 
 [RH]      /etc/dhcp/dhcpd.conf
 
+[Kea]     /etc/kea/kea-dhcp4.conf
+
+[Kea IPv6]     /etc/kea/kea-dhcp6.conf
+
+[Kea DDNS]     /etc/kea/kea-dhcp-ddns.conf
+
 
 ********
 SEE ALSO
@@ -228,4 +243,3 @@ SEE ALSO
 
 
 noderange(3)|noderange.3
-

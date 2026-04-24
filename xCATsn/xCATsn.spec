@@ -48,8 +48,13 @@ Requires: /usr/bin/killall
 Requires: /usr/bin/bc
 # yaboot-xcat is pulled in so any SN can manage ppc nodes
 Requires: httpd nfs-utils nmap bind
-# On RHEL this pulls in dhcp, on SLES it pulls in dhcp-server
+# On RHEL this pulls in dhcp, on SLES it pulls in dhcp-server. EL10 uses Kea.
+%if 0%{?rhel} >= 10
+Requires: kea
+Requires: kea-hooks
+%else
 Requires: /usr/sbin/dhcpd
+%endif
 # On RHEL this pulls in openssh-server, on SLES it pulls in openssh
 Requires: /usr/bin/ssh
 %ifnarch s390x

@@ -1031,6 +1031,17 @@ passed as argument rather than by table value',
 " -------------\n" .
 "DHCP ATTRIBUTES\n" .
 " -------------\n" .
+" dhcpbackend:  The DHCP implementation used by makedhcp. Valid values are auto,\n" .
+"               isc, and kea. The default is auto. In auto mode, xCAT uses ISC\n" .
+"               DHCP on existing supported platforms and Kea DHCP on platforms\n" .
+"               where ISC DHCP is no longer available, such as EL10 and Ubuntu\n" .
+"               24.04.\n\n" .
+" keacontrolagent:  Whether makedhcp should generate Kea Control Agent socket\n" .
+"                  configuration. Valid values are 1/yes/true/enabled or\n" .
+"                  0/no/false/disabled. The default is disabled; host\n" .
+"                  reservations use JSON render and reload unless Control\n" .
+"                  Agent operations are explicitly enabled and the Kea\n" .
+"                  host-commands hook is installed.\n\n" .
 " dhcpinterfaces:  The network interfaces DHCP should listen on.  If it is the same for all\n" .
 "                  nodes, use a comma-separated list of the NICs.  To specify different NICs\n" .
 "                  for different nodes, use the format: \"xcatmn|eth1,eth2;service|bond0\", \n" .
@@ -4338,5 +4349,3 @@ foreach (keys %xCAT::Schema::defspec) {
     }
 }
 1;
-
-

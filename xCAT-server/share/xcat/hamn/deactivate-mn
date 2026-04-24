@@ -133,7 +133,16 @@ if [ `uname` = "AIX" ]
 then
     runcmd "stopsrc -s dhcpcd"
 else # Linux
-    runcmd "service dhcpd stop"
+    if command -v systemctl >/dev/null 2>&1
+    then
+        runcmd "systemctl stop kea-ctrl-agent kea-dhcp-ddns kea-dhcp6 kea-dhcp4 dhcpd 2>/dev/null || true"
+    else
+        runcmd "service kea-ctrl-agent stop 2>/dev/null || true"
+        runcmd "service kea-dhcp-ddns stop 2>/dev/null || true"
+        runcmd "service kea-dhcp6 stop 2>/dev/null || true"
+        runcmd "service kea-dhcp4 stop 2>/dev/null || true"
+        runcmd "service dhcpd stop 2>/dev/null || true"
+    fi
 fi
 
 ##############################################################################

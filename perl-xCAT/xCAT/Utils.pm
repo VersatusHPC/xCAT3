@@ -4074,14 +4074,18 @@ sub servicemap {
     # (general service name) => {list of possible service names}
     #
     my %svchash = (
-        "dhcp"      => [ "dhcp3-server", "dhcpd", "isc-dhcp-server" ],
-        "nfs"       => [ "nfsserver",    "nfs-server", "nfs", "nfs-kernel-server" ],
-        "named"     => [ "named",        "bind9" ],
-        "syslog"    => [ "syslog",       "syslogd", "rsyslog" ],
-        "firewall"  => [ "iptables",     "firewalld", "ufw" ],
-        "http"      => [ "apache2",      "httpd" ],
-        "ntpserver" => [ "ntpd",         "ntp" ],
-        "mysql"     => [ "mysqld",       "mysql", "mariadb" ],
+        "dhcp"           => [ "dhcp3-server", "dhcpd", "isc-dhcp-server" ],
+        "kea-dhcp4"      => [ "kea-dhcp4", "kea-dhcp4-server", "isc-kea-dhcp4-server" ],
+        "kea-dhcp6"      => [ "kea-dhcp6", "kea-dhcp6-server", "isc-kea-dhcp6-server" ],
+        "kea-ctrl-agent" => [ "kea-ctrl-agent", "kea-ctrl-agent-server", "isc-kea-ctrl-agent" ],
+        "kea-dhcp-ddns"  => [ "kea-dhcp-ddns", "kea-dhcp-ddns-server", "isc-kea-dhcp-ddns-server" ],
+        "nfs"            => [ "nfsserver",    "nfs-server", "nfs", "nfs-kernel-server" ],
+        "named"          => [ "named",        "bind9" ],
+        "syslog"         => [ "syslog",       "syslogd", "rsyslog" ],
+        "firewall"       => [ "iptables",     "firewalld", "ufw" ],
+        "http"           => [ "apache2",      "httpd" ],
+        "ntpserver"      => [ "ntpd",         "ntp" ],
+        "mysql"          => [ "mysqld",       "mysql", "mariadb" ],
     );
 
     my $path       = undef;
