@@ -9,9 +9,6 @@ on:
         type: boolean
         default: false
 
-env:
-  NGINX_PORT: 8080
-
 jobs:
   build-test:
     name: "Build & Test (${{ matrix.distro }} ${{ matrix.arch }})"
@@ -97,14 +94,14 @@ jobs:
         if: matrix.type == 'rpm'
         run: |
           sudo dnf install -y \
-            mock nginx createrepo_c perl perl-core perl-generators \
+            mock createrepo_c perl perl-core perl-generators \
             perl-File-Slurper perl-Parallel-ForkManager \
             perl-Pod-Usage perl-autodie perl-Carp \
             qemu-img virt-install libvirt genisoimage openssh-clients \
-            curl rpm-build 2>&1 | tail -5
+            curl rpm-build rsync 2>&1 | tail -5
           sudo usermod -aG mock "$(whoami)" 2>/dev/null || true
           sudo mkdir -p /root/rpmbuild/SOURCES
-          sudo systemctl enable --now libvirtd nginx
+          sudo systemctl enable --now libvirtd
 
       - name: Detect mock target
         if: matrix.type == 'rpm'
@@ -124,29 +121,15 @@ jobs:
         working-directory: ${{ env.WORKDIR }}
         run: sudo perl buildrpms.pl --target "${{ steps.target.outputs.target }}" --force
 
-      - name: Configure nginx
+      - name: Verify RPMs built
         if: matrix.type == 'rpm'
+        working-directory: ${{ env.WORKDIR }}
         run: |
           TARGET="${{ steps.target.outputs.target }}"
-          sudo tee /etc/nginx/conf.d/xcat-repos.conf > /dev/null << NGINX_EOF
-          server {
-              listen $NGINX_PORT;
-              listen [::]:$NGINX_PORT;
-              location /${TARGET}/ {
-                  alias ${WORKDIR}/dist/${TARGET}/rpms/;
-                  autoindex on;
-              }
-          }
-          NGINX_EOF
-          sudo nginx -t && sudo systemctl restart nginx
-
-      - name: Verify RPM repo
-        if: matrix.type == 'rpm'
-        run: |
-          TARGET="${{ steps.target.outputs.target }}"
-          curl -sf "http://127.0.0.1:${NGINX_PORT}/${TARGET}/repodata/repomd.xml" > /dev/null \
-            && echo "OK: repo served at http://127.0.0.1:${NGINX_PORT}/${TARGET}/" \
-            || { echo "ERROR: repo not reachable"; exit 1; }
+          RPM_COUNT=$(find "dist/$TARGET/rpms" -name "*.rpm" 2>/dev/null | wc -l)
+          echo "Built $RPM_COUNT RPMs in dist/$TARGET/rpms/"
+          ls -la "dist/$TARGET/rpms/"*.rpm 2>/dev/null | head -20
+          test "$RPM_COUNT" -gt 0 || { echo "ERROR: no RPMs produced"; exit 1; }
 
       - name: Run VM-based test
         if: matrix.type == 'rpm'
@@ -159,8 +142,9 @@ jobs:
           TARGET="${{ steps.target.outputs.target }}"
           sudo -E bash ci/vm-test.sh \
             --releasever ${{ matrix.elver }} \
-            --nginx-port $NGINX_PORT \
-            --repo-target "$TARGET" $KEEP_FLAG
+            --repo-target "$TARGET" \
+            --repo-path "$WORKDIR/dist/$TARGET/rpms" \
+            $KEEP_FLAG
 
       - name: Upload RPMs
         if: always() && matrix.type == 'rpm'

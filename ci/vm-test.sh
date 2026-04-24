@@ -12,7 +12,6 @@ set -euo pipefail
 
 # ── tunables ─────────────────────────────────────────────────────────────────
 RELEASEVER="${RELEASEVER:-10}"
-NGINX_PORT="${NGINX_PORT:-8080}"
 KEEP_VM=0
 STATE_DIR="/var/lib/xcat3-ci"
 STATE_FILE="$STATE_DIR/managed-vms.txt"
@@ -21,15 +20,15 @@ VM_PREFIX="xcat3-ci"
 CLOUD_IMG_DIR="/var/lib/libvirt/images"
 SSH_TIMEOUT=300
 LIBVIRT_NET="default"
-
 REPO_TARGET="${REPO_TARGET:-}"
+REPO_PATH="${REPO_PATH:-}"
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
         --keep)         KEEP_VM=1; shift ;;
         --releasever)   RELEASEVER="$2"; shift 2 ;;
-        --nginx-port)   NGINX_PORT="$2"; shift 2 ;;
         --repo-target)  REPO_TARGET="$2"; shift 2 ;;
+        --repo-path)    REPO_PATH="$2"; shift 2 ;;
         *)              echo "Unknown option: $1" >&2; exit 1 ;;
     esac
 done
@@ -101,19 +100,9 @@ ensure_cloud_image() {
     echo "$base_img"
 }
 
-# ── network: find the host IP on the libvirt bridge ──────────────────────────
-host_bridge_ip() {
-    local net_xml bridge ip
-    net_xml=$(sudo virsh net-dumpxml "$LIBVIRT_NET" 2>/dev/null) || die "libvirt network '$LIBVIRT_NET' not found"
-    ip=$(echo "$net_xml" | grep -oP "address='\K[0-9.]+")
-    echo "$ip"
-}
-
 # ── cloud-init ───────────────────────────────────────────────────────────────
 make_cloud_init_iso() {
     local ci_dir="$STATE_DIR/$VM_NAME-ci"
-    local host_ip
-    host_ip=$(host_bridge_ip)
     mkdir -p "$ci_dir"
 
     # user-data
@@ -132,16 +121,9 @@ chpasswd:
 ssh_authorized_keys:
   - $(cat "${SSH_KEY}.pub")
 
-yum_repos:
-  xcat3:
-    name: xCAT3 CI Build
-    baseurl: http://${host_ip}:${NGINX_PORT}/${REPO_TARGET}/
-    gpgcheck: false
-    enabled: true
-
 packages:
   - epel-release
-  - vim
+  - rsync
 
 runcmd:
   - sed -i 's/^SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
@@ -241,12 +223,29 @@ wait_for_ssh() {
     die "Timed out waiting for SSH on $VM_NAME"
 }
 
+ssh_cmd() {
+    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null "$@"
+}
+
+copy_repo_to_vm() {
+    local vm_ip="$1"
+    if [[ -z "$REPO_PATH" ]]; then
+        die "--repo-path is required"
+    fi
+    log "Copying repo from $REPO_PATH to $vm_ip:/opt/xcat3-repo/"
+    ssh_cmd root@"$vm_ip" 'mkdir -p /opt/xcat3-repo'
+    rsync -a -e "ssh -i $SSH_KEY -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null" \
+        "$REPO_PATH/" root@"$vm_ip":/opt/xcat3-repo/
+    log "Repo copied successfully"
+}
+
 run_tests() {
     local vm_ip="$1"
     log "Running tests on $vm_ip"
 
-    ssh -i "$SSH_KEY" -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null \
-        root@"$vm_ip" bash -s "$RELEASEVER" "$ARCH" << 'TEST_SCRIPT'
+    copy_repo_to_vm "$vm_ip"
+
+    ssh_cmd root@"$vm_ip" bash -s "$RELEASEVER" "$ARCH" << 'TEST_SCRIPT'
 set -euo pipefail
 RELEASEVER="$1"
 ARCH="$2"
@@ -256,8 +255,15 @@ echo "--- Waiting for cloud-init to finish ---"
 timeout 300 bash -c 'while [ ! -f /var/lib/cloud-init-done ]; do sleep 5; done' \
     || { echo "cloud-init did not finish in time"; exit 1; }
 
-echo "--- Refreshing repos ---"
-dnf makecache || true
+echo "--- Configuring local repo ---"
+cat > /etc/yum.repos.d/xcat3-local.repo << 'REPO'
+[xcat3-local]
+name=xCAT3 CI Build (local)
+baseurl=file:///opt/xcat3-repo/
+gpgcheck=0
+enabled=1
+REPO
+dnf makecache --repo=xcat3-local || true
 
 echo "--- Installing xCAT ---"
 dnf install -y xCAT || { echo "FAIL: dnf install xCAT failed"; exit 1; }
